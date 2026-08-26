@@ -1,0 +1,9 @@
+# Extra safety — `files` in package.json is the source of truth
+**/target/
+**/*.map
+.DS_Store
+.codegraph/
+.cursor/
+.figmagraph/
+.native-stage/
+indexes/

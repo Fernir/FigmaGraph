@@ -1,6 +1,6 @@
 {
   "name": "figmagraph",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "Local Figma knowledge graph MCP for Cursor, Claude, Codex, and more — Rust core, Layout IR",
   "type": "module",
   "bin": {
@@ -17,7 +17,9 @@
     "LICENSE",
     "scripts/postinstall-native.js",
     "scripts/build-native.js",
-    "crates/figmagraph-core"
+    "crates/figmagraph-core/Cargo.toml",
+    "crates/figmagraph-core/Cargo.lock",
+    "crates/figmagraph-core/src"
   ],
   "scripts": {
     "build": "tsc && node scripts/chmod-cli.js && node scripts/build-native.js",
