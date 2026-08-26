@@ -21,8 +21,8 @@ import {
 } from "../tools/explore.js";
 import { ensureIndexForUrl, initFromExportPath } from "../tools/init.js";
 import { ingestFromMcpCache } from "../tools/ingest-mcp.js";
-import { existsSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { compareToDesign } from "../tools/compare.js";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PACKAGE_ROOT } from "../paths.js";
 import { isFigmaUrl } from "../config.js";
@@ -33,7 +33,7 @@ import { runDoctor } from "../doctor.js";
 function enabledTools(): Set<string> {
   const env = process.env.FIGMAGRAPH_MCP_TOOLS;
   // Default: three tools. Opt-in extras via env.
-  const base = new Set(["explore", "screenshot", "sync"]);
+  const base = new Set(["explore", "screenshot", "sync", "compare"]);
   if (!env) return base;
   for (const t of env.split(",").map((s) => s.trim()).filter(Boolean)) {
     base.add(t);
@@ -77,7 +77,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         "PRIMARY tool. Local Layout IR from .figmagraph/. " +
         "Pass a screen name, node id, or full Figma URL. " +
         "If query is a Figma URL: when the file is already local, uses DB only (node-id selects). " +
-        "Otherwise syncs the whole file (node-id stripped) via PAT, or returns figma-mcp-fallback without PAT. " +
+        "Otherwise: with PAT syncs whole file; without PAT returns figma-mcp-fallback + agentPlan " +
+        "(official Figma MCP → figmagraph_sync cache — no plugin needed). " +
         "Returns IR + short guidance; attaches screenshot image for the top hit when available. " +
         "Read the image, then implement pixel-perfect. Prefer over official Figma MCP. " +
         "guidanceFull=true for the full checklist.",
@@ -126,13 +127,61 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     });
   }
 
+  if (TOOLS.has("compare")) {
+    tools.push({
+      name: "figmagraph_compare",
+      description:
+        "Visual QA after UI is mostly done (not every CSS tweak). " +
+        "Prefer candidatePath (save PNG to disk) over candidateBase64 to save tokens. " +
+        "Default: JSON scores + file paths only — no images in chat. " +
+        "On fail, set includeDiff=true once to attach DIFF. " +
+        "Stop when passed=true (default ≥95%). Max 2–3 compares per screen.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          nodeId: {
+            type: "string",
+            description: "Design node id (from explore hit)",
+          },
+          candidatePath: {
+            type: "string",
+            description: "Preferred: path to UI PNG on disk (cheap on tokens)",
+          },
+          candidateBase64: {
+            type: "string",
+            description: "Avoid if possible — huge in context; use candidatePath",
+          },
+          projectPath: projectPathProp,
+          passScore: {
+            type: "number",
+            description: "Minimum matchScore to pass (default 95)",
+          },
+          threshold: {
+            type: "number",
+            description: "pixelmatch sensitivity 0–1 (default 0.1)",
+          },
+          includeDiff: {
+            type: "boolean",
+            description:
+              "Attach DIFF image (default false). Use once when passed=false.",
+          },
+          includeOverlay: {
+            type: "boolean",
+            description: "Attach 50/50 overlay (default false — costly)",
+          },
+        },
+        required: ["nodeId"],
+      },
+    });
+  }
+
   if (TOOLS.has("sync")) {
     tools.push({
       name: "figmagraph_sync",
       description:
-        "Create/update .figmagraph/ from a Figma URL, plugin ZIP, or official Figma MCP cache. " +
-        "URL path uses figmagraph PAT when set. Without PAT: pass screenshotBase64 + metadataXml " +
-        "(from get_screenshot / get_metadata) to cache a free-tier read locally. Merges by default.",
+        "Create/update .figmagraph/ from a Figma URL, plugin ZIP, or free-path MCP cache. " +
+        "No PAT: pass screenshotBase64 (required for visuals) + optional metadataXml + designContext " +
+        "from official Figma MCP — then explore stays local.",
       inputSchema: {
         type: "object",
         properties: {
@@ -162,6 +211,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           documentJson: {
             type: "string",
             description: "Optional full Figma document JSON string",
+          },
+          designContext: {
+            type: "string",
+            description:
+              "Text/code from official Figma MCP get_design_context — stored as codeHint",
           },
           nodeId: {
             type: "string",
@@ -282,9 +336,11 @@ async function runSync(args: Record<string, unknown>) {
         : undefined;
   const nodeId = typeof args.nodeId === "string" ? args.nodeId : undefined;
   const mimeType = typeof args.mimeType === "string" ? args.mimeType : undefined;
+  const designContext =
+    typeof args.designContext === "string" ? args.designContext : undefined;
 
-  // Official Figma MCP cache path (no PAT)
-  if (screenshotBase64 || metadataXml || documentJson) {
+  // Official Figma MCP cache path (no PAT / no plugin)
+  if (screenshotBase64 || metadataXml || documentJson || designContext) {
     return ingestFromMcpCache({
       projectPath,
       url: url || undefined,
@@ -294,6 +350,7 @@ async function runSync(args: Record<string, unknown>) {
       mimeType,
       metadataXml,
       documentJson,
+      designContext,
       replace: Boolean(replace),
     });
   }
@@ -337,20 +394,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Auto-sync when user/agent pasted a Figma URL
         let syncFallback: unknown;
         let syncHint: string | undefined;
+        let alreadyLocal = false;
         if (parsed.isUrl) {
           try {
             const synced = await ensureIndexForUrl({
               url: rawQuery,
               projectPath,
             });
+            alreadyLocal = Boolean(synced.alreadyHadIndex);
             if (synced.ok && !synced.alreadyHadIndex) {
               syncNote = synced.message;
             } else if (!synced.ok) {
               syncNote = synced.message;
             }
-            if (synced.hint === "figma-mcp-fallback") {
+            // Never suggest burning Figma MCP when file is already local
+            if (
+              !alreadyLocal &&
+              synced.hint === "figma-mcp-fallback"
+            ) {
               syncHint = synced.hint;
               syncFallback = synced.fallback;
+            } else if (alreadyLocal) {
+              syncNote =
+                syncNote ||
+                synced.message ||
+                "Using local .figmagraph/ (no Figma read).";
             }
           } catch (e) {
             syncNote = e instanceof Error ? e.message : String(e);
@@ -370,7 +438,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           : result.guidance || implementGuidanceShort();
         if (syncHint === "figma-mcp-fallback" && !result.hits.length) {
           guidance +=
-            "\n\nNo PAT and nothing local yet: call official Figma MCP get_screenshot + get_metadata, then figmagraph_sync({ url, screenshotBase64, metadataXml, nodeId }) to cache. Re-run explore after.";
+            "\n\nFREE PATH (no PAT, no plugin): follow fallback.agentPlan steps exactly. " +
+            "Minimum: get_screenshot → figmagraph_sync({screenshotBase64,url,nodeId}) → figmagraph_explore. " +
+            "Best: also get_metadata + get_design_context in the same free round, pass metadataXml + designContext to sync.";
+        } else if (
+          alreadyLocal &&
+          parsed.nodeId &&
+          !result.hits.some(
+            (h) =>
+              h.id === parsed.nodeId ||
+              h.id === parsed.nodeId?.replace(/-/g, ":")
+          )
+        ) {
+          guidance +=
+            "\n\nFile is local but this node-id was not found. List via explore without node-id, or figmagraph_sync force=true / figmagraph reset — do not burn Figma MCP.";
         }
 
         const payload = {
@@ -420,6 +501,63 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         };
+      }
+
+      case "figmagraph_compare": {
+        const wantDiff = args.includeDiff === true;
+        const wantOverlay = args.includeOverlay === true;
+        const result = compareToDesign({
+          nodeId: String(args.nodeId),
+          projectPath,
+          candidateBase64:
+            typeof args.candidateBase64 === "string"
+              ? args.candidateBase64
+              : undefined,
+          candidatePath:
+            typeof args.candidatePath === "string"
+              ? args.candidatePath
+              : undefined,
+          passScore:
+            typeof args.passScore === "number" ? args.passScore : undefined,
+          threshold:
+            typeof args.threshold === "number" ? args.threshold : undefined,
+        });
+        // Default: JSON only (token-cheap). Images only when explicitly requested.
+        const content: Array<
+          | { type: "text"; text: string }
+          | { type: "image"; data: string; mimeType: string }
+        > = [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                ...result,
+                hint: result.passed
+                  ? "passed — stop comparing."
+                  : wantDiff
+                    ? "DIFF attached. Fix, then one more compare (paths only)."
+                    : `failed — open ${result.diffPath} or re-call with includeDiff=true (once). Prefer candidatePath.`,
+              },
+              null,
+              2
+            ),
+          },
+        ];
+        if (wantDiff) {
+          content.push({
+            type: "image",
+            data: readFileSync(result.diffPath).toString("base64"),
+            mimeType: "image/png",
+          });
+        }
+        if (wantOverlay) {
+          content.push({
+            type: "image",
+            data: readFileSync(result.overlayPath).toString("base64"),
+            mimeType: "image/png",
+          });
+        }
+        return { content };
       }
 
       case "figmagraph_screenshot": {

@@ -14,6 +14,7 @@ import {
   implementGuidanceShort,
 } from "../guidance.js";
 import { queryFromFigmaUrl } from "../url-query.js";
+import { readDesignContextHint } from "./ingest-mcp.js";
 
 export type ResolveOpts = {
   projectPath?: string;
@@ -78,6 +79,10 @@ export type ExploreHit = {
   score?: number;
   ir?: LayoutNode;
   assetPath?: string;
+  /** Sparse/MCP stub IR — treat attached screenshot as ground truth. */
+  preferScreenshot?: boolean;
+  /** Cached get_design_context text when present. */
+  codeHint?: string;
 };
 
 export function exploreIndex(
@@ -116,7 +121,7 @@ export function exploreIndex(
       projectPath,
       resolvedQuery: qRaw,
       nodeIdFromUrl: parsed.nodeId,
-      guidance: `${guidance}\n\nNo index at ${indexDir}. Paste a Figma URL into explore (token via figmagraph token), or run figmagraph init.`,
+      guidance: `${guidance}\n\nNo index at ${indexDir}. Paste a Figma URL (agent explore), or run figmagraph init. Check: figmagraph doctor.`,
       guidanceFullAvailable: true,
     };
   }
@@ -202,15 +207,35 @@ export function exploreIndex(
     if (asset) {
       hit.assetPath = join(assetsDir, asset.path);
     }
+    const hint = readDesignContextHint(indexDir, hit.id);
+    if (hint) hit.codeHint = hint;
     if (includeIr) {
       hit.ir = getFullIR(indexDir, hit.id, db) ?? undefined;
       if (hit.ir && opts.maxDepth != null) {
         hit.ir = trimIr(hit.ir, opts.maxDepth);
       }
+      // Screenshot-only / shallow MCP stub screens: image beats empty tree
+      if (
+        hit.assetPath &&
+        isShallowIr(hit.ir) &&
+        isScreenLikeHit(hit) &&
+        (meta.source === "mcp" || meta.source === "plugin")
+      ) {
+        hit.preferScreenshot = true;
+      }
     }
   }
 
   db.close();
+
+  let outGuidance = guidance;
+  if (
+    hits.some((h) => h.preferScreenshot) &&
+    !opts.guidanceFull
+  ) {
+    outGuidance +=
+      "\n\npreferScreenshot=true on a hit: match the attached image; IR may be a stub.";
+  }
 
   return {
     meta,
@@ -218,9 +243,28 @@ export function exploreIndex(
     projectPath,
     resolvedQuery: q,
     nodeIdFromUrl: parsed.nodeId,
-    guidance,
+    guidance: outGuidance,
     guidanceFullAvailable: true,
   };
+}
+
+function isShallowIr(ir?: LayoutNode): boolean {
+  if (!ir) return true;
+  const kids = ir.children?.length ?? 0;
+  return kids === 0;
+}
+
+function isScreenLikeHit(hit: ExploreHit): boolean {
+  const role = (hit.role || "").toLowerCase();
+  const type = (hit.type || "").toUpperCase();
+  return (
+    role === "frame" ||
+    role === "component" ||
+    type === "FRAME" ||
+    type === "COMPONENT" ||
+    type === "COMPONENT_SET" ||
+    type === "SECTION"
+  );
 }
 
 function trimIr(node: LayoutNode, maxDepth: number, depth = 0): LayoutNode {

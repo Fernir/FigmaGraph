@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { userDataRoot } from "./paths.js";
 
-export type FigmagraphConfig = {
+export type FigmaGraphConfig = {
   token?: string;
   pluginDir?: string;
   pluginSyncedAt?: string;
@@ -14,17 +14,17 @@ function configPath(): string {
   return join(userDataRoot(), "config.json");
 }
 
-export function readConfig(): FigmagraphConfig {
+export function readConfig(): FigmaGraphConfig {
   const p = configPath();
   if (!existsSync(p)) return {};
   try {
-    return JSON.parse(readFileSync(p, "utf8")) as FigmagraphConfig;
+    return JSON.parse(readFileSync(p, "utf8")) as FigmaGraphConfig;
   } catch {
     return {};
   }
 }
 
-export function writeConfig(patch: FigmagraphConfig): FigmagraphConfig {
+export function writeConfig(patch: FigmaGraphConfig): FigmaGraphConfig {
   mkdirSync(userDataRoot(), { recursive: true });
   const next = { ...readConfig(), ...patch };
   writeFileSync(configPath(), JSON.stringify(next, null, 2) + "\n");

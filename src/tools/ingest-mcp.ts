@@ -2,7 +2,7 @@
  * Cache design data fetched via official Figma MCP (free-tier reads)
  * into the local .figmagraph/ index — no figmagraph PAT required.
  */
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AssetMap, FigmaDocument, FigmaNode } from "../types.js";
 import {
@@ -21,6 +21,7 @@ import {
 } from "../ingest/merge.js";
 import { isFigmaUrl, slugifyName } from "../config.js";
 import { wireAgents } from "../agents.js";
+import { buildFreePathPlan, type FreePathPlan } from "../free-path.js";
 
 export type McpCacheResult = {
   ok: boolean;
@@ -53,6 +54,8 @@ export type McpIngestOpts = {
   metadataXml?: string;
   /** Full Figma document JSON if the agent already has it. */
   documentJson?: string | Record<string, unknown>;
+  /** Text/code from official get_design_context — stored as codeHint. */
+  designContext?: string;
   replace?: boolean;
 };
 
@@ -269,7 +272,7 @@ function buildDocumentFromMcp(opts: McpIngestOpts): {
     figmagraphExport: {
       fileKey,
       fileName: suggestedName || root.name,
-      fidelity: "mcp-cache",
+      fidelity: opts.metadataXml || opts.documentJson ? "mcp-cache" : "screenshot",
       exportedAt: new Date().toISOString(),
       assets: {},
     },
@@ -324,6 +327,15 @@ export function ingestFromMcpCache(opts: McpIngestOpts): McpCacheResult {
         [nodeId]: fileName,
       };
     }
+  }
+
+  if (opts.designContext?.trim()) {
+    const hintsDir = join(indexDir, "hints");
+    mkdirSync(hintsDir, { recursive: true });
+    writeFileSync(
+      join(hintsDir, `${nodeId.replace(/:/g, "-")}.md`),
+      opts.designContext.trim() + "\n"
+    );
   }
 
   assetMap = mergeAssetMaps(existing?.assetMap, assetMap, { replace });
@@ -403,22 +415,42 @@ export function figmaMcpFallbackMessage(opts: {
   url: string;
   fileKey?: string;
   nodeId?: string;
-}): McpCacheResult {
+  projectPath?: string;
+}): McpCacheResult & { agentPlan: FreePathPlan } {
+  const agentPlan = buildFreePathPlan({
+    url: opts.url,
+    fileKey: opts.fileKey,
+    nodeId: opts.nodeId,
+    projectPath: opts.projectPath,
+  });
   return {
     ok: false,
     source: "mcp",
-    projectPath: resolveProjectPath({}),
+    projectPath: resolveProjectPath({ projectPath: opts.projectPath }),
     indexDir: opts.indexDir,
     label: "",
     nodeCount: 0,
     rootCount: 0,
     fileKey: opts.fileKey,
     message:
-      `No figmagraph PAT — use official Figma MCP free-tier read, then cache locally:\n` +
-      `  1) get_screenshot + get_metadata (and get_design_context if needed) for this URL\n` +
-      `  2) figmagraph_sync with url, screenshotBase64, metadataXml, nodeId\n` +
-      `  3) figmagraph_explore again — serves from ${opts.indexDir}\n` +
-      `Optional unlimited REST: figmagraph token <figu_…>`,
+      `No PAT / no plugin needed. Follow agentPlan (official Figma MCP → figmagraph_sync → explore). ` +
+      `Minimum: get_screenshot → sync → explore. Best: + get_metadata + get_design_context in the same free round.`,
     hint: "figma-mcp-fallback",
+    agentPlan,
   };
+}
+
+/** Read cached get_design_context text for a node, if present. */
+export function readDesignContextHint(
+  indexDir: string,
+  nodeId: string
+): string | null {
+  const id = nodeId.replace(/:/g, "-");
+  const path = join(indexDir, "hints", `${id}.md`);
+  if (!existsSync(path)) return null;
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
 }

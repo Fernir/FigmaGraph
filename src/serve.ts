@@ -243,7 +243,7 @@ function printSetupHint(projectPath: string, port: number): void {
     markPluginImportHintShown();
   } else {
     ui.info(
-      `Daily: ${ui.bold("Plugins → Development → Figmagraph Export → Push")}`
+      `Daily: ${ui.bold("Plugins → Development → FigmaGraph Export → Push")}`
     );
     console.log(`  ${ui.dim(manifest)}`);
   }

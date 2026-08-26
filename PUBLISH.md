@@ -1,4 +1,4 @@
-# Publishing figmagraph
+# Publishing FigmaGraph
 
 ## Checklist
 
@@ -21,7 +21,7 @@ other platforms install via GitHub Releases (`figmagraph.nativeReleaseBase`).
 Local/dev: import **once** from the stable path `~/.figmagraph/plugin/manifest.json`
 (`figmagraph` / `figmagraph plugin` keeps that folder in sync with the npm package).
 
-Daily: **Plugins → Development → Figmagraph Export → Push** — no re-import after npm updates.
+Daily: **Plugins → Development → FigmaGraph Export → Push** — no re-import after npm updates.
 
 To publish to Community (users install from Figma UI, no Development import): Figma → plugin → Publish.
 Ship the same `plugin/` folder; point README at the Community listing once live.

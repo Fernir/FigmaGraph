@@ -21,6 +21,8 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+      - name: Pack size guard
+        run: npm run pack:check
       - name: Cargo check
         working-directory: crates/figmagraph-core
         run: cargo test --release

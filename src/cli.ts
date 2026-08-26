@@ -40,7 +40,7 @@ const VERSION = (() => {
 
 function usage(exitCode = 0): never {
   ui.banner(
-    "Figmagraph",
+    "FigmaGraph",
     VERSION,
     "Local Figma index for Cursor, Claude, Codex & more"
   );
@@ -124,7 +124,7 @@ function printIndexSummary(opts: {
     /* ignore */
   }
 
-  ui.title("Figmagraph Index");
+  ui.title("FigmaGraph Index");
   console.log(`${ui.cyan("Project:")}  ${opts.projectPath}`);
   console.log(`${ui.cyan("Label:")}    ${opts.label}`);
   if (opts.fileName) console.log(`${ui.cyan("File:")}     ${opts.fileName}`);
@@ -154,7 +154,7 @@ async function initFromUrl(
   const fullUrl = stripNodeIdFromUrl(url);
   const parsed = parseFigmaUrl(url);
 
-  ui.title("Figmagraph Init");
+  ui.title("FigmaGraph Init");
   ui.info(`Project  ${projectPath}`);
   ui.info(`URL      ${ui.dim(fullUrl)}`);
   ui.info(`Key      ${parsed.fileKey}${parsed.nodeId ? " · (node stripped → full file)" : ""}`);
@@ -206,7 +206,7 @@ async function initFromExport(
     projectPath: flags.project ? String(flags.project) : process.cwd(),
   });
 
-  ui.title("Figmagraph Init");
+  ui.title("FigmaGraph Init");
   ui.info(`Project  ${projectPath}`);
   ui.info(`Loading export from ${from}`);
   const replace = Boolean(flags.replace);
@@ -265,21 +265,15 @@ async function cmdInit(
     typeof flags.token === "string" ? flags.token : undefined;
   const result = initProject({ projectPath, token });
 
-  ui.title("Figmagraph Init");
+  ui.title("FigmaGraph Init");
   console.log(`${ui.cyan("Project:")}  ${result.projectPath}`);
   console.log(`${ui.cyan("Index:")}    ${ui.dim(result.indexDir)}`);
   ui.blank();
+  ui.success("Ready. Paste a Figma link with node-id in Cursor.");
+  ui.info("No PAT / no plugin: agent follows free MCP → cache → local explore.");
+  ui.info(`Check: ${ui.cyan("figmagraph doctor")}`);
   if (result.tokenOk) {
-    ui.success("Project wired. Paste a Figma link in Cursor — that's it.");
-    ui.info("Agent syncs into .figmagraph/ (PAT or free Figma MCP → local cache).");
-  } else {
-    ui.success("Project wired (.figmagraph + MCP). Paste a Figma link — that's it.");
-    ui.info(
-      "No PAT: agent uses official Figma MCP free-tier once, then caches locally."
-    );
-    ui.info(
-      `Optional unlimited REST: ${ui.cyan("figmagraph token")} ${ui.dim("<figu_…>")}`
-    );
+    ui.info("PAT on file — URL sync can pull the whole file via REST.");
   }
   ui.blank();
 }
@@ -288,7 +282,7 @@ function cmdToken(positional: string[]) {
   const token = positional[0]?.trim();
   if (!token) {
     const existing = resolveFigmaToken();
-    ui.title("Figmagraph Token");
+    ui.title("FigmaGraph Token");
     if (existing) {
       ui.success(`Token on file (${existing.slice(0, 8)}…)`);
       ui.info(`Override: ${ui.cyan("figmagraph token")} <new-token>`);
@@ -301,7 +295,7 @@ function cmdToken(positional: string[]) {
     return;
   }
   saveFigmaToken(token);
-  ui.title("Figmagraph Token");
+  ui.title("FigmaGraph Token");
   ui.success(`Saved to ${join(userDataRoot(), "config.json")}`);
   ui.info(`In your app: ${ui.cyan("figmagraph init")}  then paste Figma links in chat`);
   ui.blank();
@@ -376,7 +370,7 @@ function cmdStatus(flags: Record<string, string | boolean>) {
     return;
   }
 
-  ui.title("Figmagraph Status");
+  ui.title("FigmaGraph Status");
   console.log(`${ui.cyan("Project:")}  ${result.projectPath ?? projectPath}`);
   console.log(
     `${ui.cyan("Index:")}    ${ui.dim(result.indexPath ?? resolveIndexDir({ projectPath }))}`
@@ -442,7 +436,7 @@ async function main() {
       const { resetProjectIndex } = await import("./tools/init.js");
       const projectPath = flags.project ? String(flags.project) : process.cwd();
       const result = resetProjectIndex({ projectPath });
-      ui.title("Figmagraph Reset");
+      ui.title("FigmaGraph Reset");
       console.log(`${ui.cyan("Project:")}  ${result.projectPath}`);
       console.log(`${ui.cyan("Index:")}    ${ui.dim(result.indexDir)}`);
       ui.blank();
@@ -504,7 +498,7 @@ async function main() {
           console.log(`  Plugins → Development → Import plugin from manifest…`);
           console.log(`  (Finder should have highlighted the file)`);
         } else {
-          ui.info("Daily: Plugins → Development → Figmagraph Export → Push");
+          ui.info("Daily: Plugins → Development → FigmaGraph Export → Push");
         }
       }
       break;
@@ -521,7 +515,7 @@ async function main() {
         console.log(JSON.stringify({ ...report, serveRunning: serveUp }, null, 2));
         break;
       }
-      ui.title("Figmagraph Doctor");
+      ui.title("FigmaGraph Doctor");
       console.log(`${ui.cyan("Project:")}  ${report.projectPath}`);
       console.log(`${ui.cyan("Index:")}    ${ui.dim(report.indexDir)}`);
       console.log(`${ui.cyan("Plugin:")}   ${ui.dim(pluginManifestPath())}`);
@@ -535,8 +529,9 @@ async function main() {
       }
       ui.blank();
       if (!report.checks.find((c) => c.id === "index")?.ok) {
-        ui.info(`Run ${ui.cyan("figmagraph")} then Push from the Figma plugin`);
-        ui.info(`Manifest: ${pluginManifestPath()}`);
+        ui.info(
+          `No design data yet — paste a Figma link in chat, or ${ui.cyan("figmagraph serve")} + plugin Push`
+        );
       }
       if (report.ok) ui.success("All critical checks passed");
       else ui.warn("Some checks failed — see details above");

@@ -1,18 +1,25 @@
-# Figmagraph (agent rule)
+# FigmaGraph (agent rule)
 
 ## Figma link pasted
 
-Do **not** wait. Prefer local `.figmagraph/` over official Figma MCP.
+Do **not** wait. Do **not** ask for a Figma PAT or Desktop plugin first.
 
-1. `figmagraph_explore` with the URL + `projectPath` = workspace root.
-2. IR / screenshot present → implement from that.
-3. `hint: figma-mcp-fallback` → official `get_screenshot` + `get_metadata` → `figmagraph_sync` (cache) → explore again.
-4. Same file already indexed → local only (node-id selects). Fresh file → whole-file sync (node stripped).
+1. `figmagraph_explore` once (URL + `projectPath`). Use IR + the one attached screenshot.
+2. `hint: figma-mcp-fallback` → follow `fallback.agentPlan` (free path).
+3. File already indexed → local only — no more Figma MCP.
+
+## After implement (visual QA — token-cheap)
+
+1. Finish the UI first; do **not** compare after every CSS tweak.
+2. Save a PNG of the frame to disk (e.g. `.figmagraph/compare/ui.png`).
+3. `figmagraph_compare` with `nodeId` + **`candidatePath`** (not base64).
+4. Default response is JSON only. If `passed=false`, optionally one call with `includeDiff=true`, then fix.
+5. Max **2–3** compares per screen. Stop when `passed=true` (default ≥95%).
+6. Do not re-call `figmagraph_screenshot` / explore screenshot if you already have the design image.
 
 ## `.figmagraph/` exists
 
-- Primary: `figmagraph_explore`. Screenshot / sync only if needed.
-- IR: flex → Auto Layout; `absolute` even inside flex; tokens > hex.
-- `guidanceFull: true` for the full checklist.
+- explore → implement → compare (paths). IR: flex / absolute / tokens.
+- `guidanceFull` only if needed.
 
-Humans: `figmagraph init`. Token optional. `figmagraph reset` wipes local data.
+Humans: `figmagraph init` → paste link. `figmagraph doctor` to verify.

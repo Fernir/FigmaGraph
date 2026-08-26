@@ -53,6 +53,7 @@ export type InitResult = {
     url: string;
     fileKey?: string;
     nodeId?: string;
+    agentPlan?: import("../free-path.js").FreePathPlan;
   };
 };
 
@@ -213,8 +214,7 @@ export function initProject(opts?: {
       nodeCount: 0,
       rootCount: 0,
       message:
-        `Ready at ${indexDir}. Paste a Figma link — agent uses free Figma MCP reads and caches them locally. ` +
-        `Optional: figmagraph token <figu_…> for unlimited REST sync.`,
+        `Ready at ${indexDir}. Paste a Figma link with node-id — free path: Figma MCP → cache → local explore (no PAT/plugin).`,
       hint: "mcp-fallback-ok",
     };
   }
@@ -420,16 +420,18 @@ export async function ensureIndexForUrl(opts: {
       url: opts.url,
       fileKey: parsed.fileKey,
       nodeId: parsed.nodeId,
+      projectPath,
     });
     return {
       ...fb,
       projectPath,
       fallback: {
-        use: ["get_screenshot", "get_metadata", "get_design_context"],
+        use: fb.agentPlan.recommended,
         then: "figmagraph_sync",
         url: opts.url,
         fileKey: parsed.fileKey,
         nodeId: parsed.nodeId,
+        agentPlan: fb.agentPlan,
       },
     };
   }

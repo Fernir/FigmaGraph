@@ -1,7 +1,7 @@
-# Figmagraph
+# FigmaGraph
 
 **Local Figma index for AI agents** — Layout IR + screenshots in `.figmagraph/`.  
-Offline after sync. Works with Cursor, Claude, Codex, and more.
+No Figma PAT and no Desktop plugin required for the default path.
 
 [![npm](https://img.shields.io/npm/v/figmagraph.svg)](https://www.npmjs.com/package/figmagraph)
 [![license](https://img.shields.io/npm/l/figmagraph.svg)](./LICENSE)
@@ -13,28 +13,33 @@ Offline after sync. Works with Cursor, Claude, Codex, and more.
 ```bash
 npm i -g figmagraph
 cd your-app && figmagraph init
+figmagraph doctor
 ```
 
-Paste a Figma link in chat. The agent calls `figmagraph_explore` — that’s the whole loop.
+Paste a Figma link (**with `node-id`**) in Cursor.
 
-| | |
-|---|---|
-| **First link** | Downloads the whole file (`node-id` stripped) |
-| **Same file again** | Local DB only — no Figma re-read |
-| **No PAT** | Free Figma MCP read → cached via `figmagraph_sync` |
-| **Optional** | `figmagraph token <figu_…>` for unlimited REST |
+| Step | What happens |
+|------|----------------|
+| 1 | `figmagraph_explore` — if empty, returns **`agentPlan`** |
+| 2 | Agent uses official Figma MCP once (free tier) |
+| 3 | `figmagraph_sync` caches screenshot (+ metadata / design context) |
+| 4 | Explore again — **local forever** for that node |
+
+Minimum free round: **screenshot only**. Best: screenshot + metadata + design context together.
 
 ---
 
 ## Commands
 
 ```bash
-figmagraph init      # wire project + MCP
-figmagraph status    # index stats
-figmagraph reset     # wipe local design data
-figmagraph doctor    # health check
-figmagraph serve     # optional: plugin Push (no API quota)
-figmagraph stop
+figmagraph init | status | reset | doctor
+```
+
+Optional upgrades (not required):
+
+```bash
+figmagraph token <figu_…>   # unlimited REST whole-file sync
+figmagraph serve            # plugin Push — no API quota
 ```
 
 ---
@@ -43,20 +48,15 @@ figmagraph stop
 
 | Tool | Role |
 |------|------|
-| `figmagraph_explore` | Primary — URL / name / node-id → IR + screenshot |
-| `figmagraph_screenshot` | Extra image when needed |
-| `figmagraph_sync` | Force refresh, ZIP, or cache MCP output |
-
-Prefer figmagraph over the official Figma MCP once data is local.
+| `figmagraph_explore` | Primary — local IR / free-path `agentPlan` |
+| `figmagraph_sync` | Cache MCP output |
+| `figmagraph_screenshot` | Design image |
+| `figmagraph_compare` | Visual QA — prefer `candidatePath`; images opt-in |
 
 ---
 
 ## Docs
 
-- [Agent rule](./AGENT_RULE.md) — always-on workflow  
-- [Pixel-perfect checklist](./AGENT_RULE_IMPLEMENT.md) — `guidanceFull`  
-- [Publish](./PUBLISH.md) — npm + native binaries  
+[Agent rule](./AGENT_RULE.md) · [Pixel-perfect](./AGENT_RULE_IMPLEMENT.md) · [Publish](./PUBLISH.md)
 
----
-
-MIT © figmagraph
+MIT

@@ -1,4 +1,4 @@
-// Figmagraph Desktop plugin — full local dump (raw) + PNG/SVG assets.
+// FigmaGraph Desktop plugin — full local dump (raw) + PNG/SVG assets.
 // Import: Figma → Plugins → Development → Import plugin from manifest…
 
 function rgba(c) {

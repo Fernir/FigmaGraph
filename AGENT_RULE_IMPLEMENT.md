@@ -58,10 +58,11 @@ Stack is irrelevant: React / Vue / Svelte / Solid / plain HTML; CSS / SCSS / Les
 2. Open the screenshot / `assetPath` / `figmagraph_screenshot` — visual ground truth (**read the image**).
 3. Scan the repo for existing layout primitives, tokens, and components to reuse **without** changing metrics.
 4. Implement **only the scoped screen/section** (not neighboring frames in the index).
-5. Diff result vs screenshot: spacing, type, radius, absolute pins.
-6. Polish only after the visual match holds.
+5. **Visual QA (token-cheap):** when UI is nearly done, save a PNG → `figmagraph_compare` with **`candidatePath`** (avoid base64). Default = scores + paths only.
+6. If `passed=false`: open `diffPath` or one call with `includeDiff=true`, fix, **one** more compare. Max 2–3 compares. Pass threshold default **95%**.
+7. Do not spam compare or re-fetch design screenshots.
 
-Scope: if the user asked for a button/block, do not rewrite the whole page. File/routing/state conventions come from the repo; **pixels** come from the IR.
+Scope: if the user asked for a button/block, do not rewrite the whole page. File/routing/state conventions come from the repo; **pixels** come from the IR + compare.
 
 Allowed deviations (metrics unchanged): real interactivity (hover/focus/disabled) when the dump is default-only; minimal a11y (`button`/`label`/`alt`). Anything else that changes layout — ask first.
 
@@ -84,8 +85,8 @@ Allowed deviations (metrics unchanged): real interactivity (hover/focus/disabled
 - [ ] Typography: family, size, weight, line-height, letter-spacing, color
 - [ ] Radius, opacity, borders, shadows match IR / effect `css`
 - [ ] Tokens used when present; assets from local `assetPath`
-- [ ] Side-by-side with screenshot — no obvious drift
+- [ ] **`figmagraph_compare` → `passed: true`** (≤3 calls; prefer `candidatePath`)
 
 ## Delivery
 
-Match the project’s file layout and conventions. Output working code in-repo (or a single HTML/CSS file only if there’s no app). Do not mark the task done until the verification checklist passes.
+Match the project’s file layout and conventions. Output working code in-repo (or a single HTML/CSS file only if there’s no app). Do **not** mark the task done until `figmagraph_compare` passes.

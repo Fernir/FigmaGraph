@@ -54,6 +54,7 @@ describe("mcp cache ingest", () => {
       assert.ok(explore.hits.length >= 1);
       assert.equal(explore.hits[0]!.id, "1:2");
       assert.ok(explore.hits[0]!.assetPath);
+      assert.equal(explore.hits[0]!.preferScreenshot, true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

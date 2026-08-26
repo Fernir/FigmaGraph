@@ -8,9 +8,9 @@ import { PACKAGE_ROOT } from "./paths.js";
 
 export const GUIDANCE_SHORT = [
   "Pixel-perfect from Layout IR (flex=Auto Layout). Honor absolute pins inside flex.",
-  "tokens.* / fill.token > hex. Read assetPath / figmagraph_screenshot image before coding.",
-  "Mirror IR tree 1:1 — no redesign. Stack/CSS follows the repo.",
-  "Call figmagraph_rules (or explore with guidanceFull=true) for full workflow + checklist.",
+  "tokens.* / fill.token > hex. Read screenshot / preferScreenshot / codeHint before coding.",
+  "After implement: save UI PNG → figmagraph_compare(nodeId, candidatePath). Paths-only default; includeDiff once if failed. Max 2–3 compares.",
+  "No PAT: follow explore fallback.agentPlan. guidanceFull=true for full checklist.",
 ].join(" ");
 
 const FALLBACK_FULL = GUIDANCE_SHORT;
