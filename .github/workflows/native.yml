@@ -50,15 +50,15 @@ jobs:
         run: |
           EXT="${{ matrix.exe }}"
           SRC="target/${{ matrix.target }}/release/figmagraph-core${EXT}"
-          STAGE="../../.native-stage/${{ matrix.artifact }}"
+          STAGE="${GITHUB_WORKSPACE}/.native-stage/${{ matrix.artifact }}"
           mkdir -p "$STAGE"
           cp "$SRC" "$STAGE/figmagraph-core${EXT}"
           chmod +x "$STAGE/figmagraph-core${EXT}" || true
           cd "$STAGE"
           if [ "${{ matrix.zip }}" = "true" ]; then
-            7z a -tzip "../../../figmagraph-core-${{ matrix.artifact }}.zip" "figmagraph-core${EXT}"
+            7z a -tzip "${GITHUB_WORKSPACE}/figmagraph-core-${{ matrix.artifact }}.zip" "figmagraph-core${EXT}"
           else
-            tar -czf "../../../figmagraph-core-${{ matrix.artifact }}.tar.gz" "figmagraph-core${EXT}"
+            tar -czf "${GITHUB_WORKSPACE}/figmagraph-core-${{ matrix.artifact }}.tar.gz" "figmagraph-core${EXT}"
           fi
       - uses: actions/upload-artifact@v4
         with:
@@ -66,6 +66,7 @@ jobs:
           path: |
             figmagraph-core-${{ matrix.artifact }}.tar.gz
             figmagraph-core-${{ matrix.artifact }}.zip
+          if-no-files-found: error
 
   release:
     needs: build
