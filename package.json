@@ -49,7 +49,7 @@
   ],
   "license": "MIT",
   "figmagraph": {
-    "nativeReleaseBase": "https://github.com/Fernir/figmagraph/releases/download"
+    "nativeReleaseBase": "https://github.com/Fernir/FigmaGraph/releases/download"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

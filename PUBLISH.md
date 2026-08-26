@@ -6,7 +6,7 @@
 2. `npm test` + `npm run build` locally.
 3. Commit & push, then tag: `git tag v0.1.4 && git push origin v0.1.4`
 4. Wait for **Native binaries** workflow to upload assets to
-   `https://github.com/Fernir/figmagraph/releases` (`v0.1.4`).
+   `https://github.com/Fernir/FigmaGraph/releases` (`v0.1.4`).
 5. `npm publish` (runs `prepublishOnly` → build + test).
    - Postinstall on other machines downloads the matching native asset from that release.
 6. `postpublish` bumps patch for the next cycle (`scripts/bump-after-publish.js`).

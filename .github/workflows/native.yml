@@ -17,7 +17,8 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
             artifact: darwin-arm64
-          - os: macos-13
+          # Cross-compile on macos-14 — macos-13 runners often stay queued forever
+          - os: macos-14
             target: x86_64-apple-darwin
             artifact: darwin-x64
           - os: ubuntu-22.04
