@@ -1,0 +1,12 @@
+native/
+target/
+crates/**/target/
+node_modules/
+dist/
+indexes/
+.figmagraph/
+*.db
+.DS_Store
+.env
+*.figmagraph.zip
+.codegraph

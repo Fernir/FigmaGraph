@@ -1,0 +1,86 @@
+name: Native binaries
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact: darwin-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact: darwin-x64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact: linux-x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: linux-arm64
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            artifact: win32-x64
+            exe: ".exe"
+            zip: true
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: crates/figmagraph-core
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Pack artifact
+        shell: bash
+        run: |
+          EXT="${{ matrix.exe }}"
+          SRC="target/${{ matrix.target }}/release/figmagraph-core${EXT}"
+          STAGE="../../.native-stage/${{ matrix.artifact }}"
+          mkdir -p "$STAGE"
+          cp "$SRC" "$STAGE/figmagraph-core${EXT}"
+          chmod +x "$STAGE/figmagraph-core${EXT}" || true
+          cd "$STAGE"
+          if [ "${{ matrix.zip }}" = "true" ]; then
+            7z a -tzip "../../../figmagraph-core-${{ matrix.artifact }}.zip" "figmagraph-core${EXT}"
+          else
+            tar -czf "../../../figmagraph-core-${{ matrix.artifact }}.tar.gz" "figmagraph-core${EXT}"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: figmagraph-core-${{ matrix.artifact }}
+          path: |
+            figmagraph-core-${{ matrix.artifact }}.tar.gz
+            figmagraph-core-${{ matrix.artifact }}.zip
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect release assets
+        run: |
+          mkdir -p dist-native
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} dist-native/ \;
+          ls -la dist-native
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist-native/*
+          generate_release_notes: true

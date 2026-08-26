@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root {
+      --bg: #1e1e1e;
+      --fg: #f5f5f5;
+      --muted: #a0a0a0;
+      --accent: #0d99ff;
+      --border: #333;
+      --ok: #3dd68c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font: 12px/1.4 Inter, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      margin: 0;
+      padding: 16px;
+    }
+    h1 { font-size: 14px; margin: 0 0 6px; font-weight: 600; }
+    p { color: var(--muted); margin: 0 0 14px; }
+    label.block { display: block; margin-bottom: 6px; color: var(--muted); }
+    label.check { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    select, input[type="text"], button {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #2c2c2c;
+      color: var(--fg);
+      font: inherit;
+    }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    button.secondary {
+      background: #2c2c2c;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button.ghost {
+      background: transparent;
+      margin-top: 8px;
+      cursor: pointer;
+    }
+    #status { margin-top: 12px; color: var(--muted); min-height: 1.2em; white-space: pre-wrap; }
+    #status.ok { color: var(--ok); }
+    #status.err { color: #ff6b6b; }
+    .row { margin-bottom: 12px; }
+    code { font-size: 11px; }
+  </style>
+</head>
+<body>
+  <h1>Figmagraph</h1>
+  <p>Full local dump — no Figma REST. Prefer <b>Push to localhost</b> while <code>figmagraph serve</code> is running.</p>
+
+  <div class="row">
+    <label class="block">Scope</label>
+    <select id="scope">
+      <option value="selection">Selection</option>
+      <option value="page">Current page</option>
+    </select>
+  </div>
+
+  <label class="check"><input type="checkbox" id="images" checked /> PNG screenshots (@2x)</label>
+  <label class="check"><input type="checkbox" id="svg" checked /> SVG for small vectors/icons</label>
+  <label class="check"><input type="checkbox" id="replace" /> Replace entire index (don't merge)</label>
+
+  <div class="row">
+    <label class="block">Serve endpoint</label>
+    <input type="text" id="endpoint" value="http://127.0.0.1:9473/ingest" />
+  </div>
+
+  <button class="primary" id="push">Push to localhost</button>
+  <button class="secondary" id="export">Download ZIP instead</button>
+  <button class="ghost" id="cancel">Close</button>
+  <div id="status"></div>
+
+  <script>
+    function crc32(buf) {
+      let c = ~0;
+      for (let i = 0; i < buf.length; i++) {
+        c ^= buf[i];
+        for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+      }
+      return ~c >>> 0;
+    }
+    function u16(n) { return new Uint8Array([n & 255, (n >>> 8) & 255]); }
+    function u32(n) {
+      return new Uint8Array([n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]);
+    }
+    function concat(arrays) {
+      const len = arrays.reduce((a, b) => a + b.length, 0);
+      const out = new Uint8Array(len);
+      let o = 0;
+      for (const a of arrays) { out.set(a, o); o += a.length; }
+      return out;
+    }
+    function buildZip(files) {
+      const localParts = [];
+      const centralParts = [];
+      let offset = 0;
+      for (const f of files) {
+        const nameBytes = new TextEncoder().encode(f.name);
+        const data = f.data;
+        const crc = crc32(data);
+        const local = concat([
+          u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
+          u32(crc), u32(data.length), u32(data.length),
+          u16(nameBytes.length), u16(0), nameBytes, data,
+        ]);
+        const central = concat([
+          u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+          u32(crc), u32(data.length), u32(data.length),
+          u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0),
+          u32(offset), nameBytes,
+        ]);
+        localParts.push(local);
+        centralParts.push(central);
+        offset += local.length;
+      }
+      const centralDir = concat(centralParts);
+      const end = concat([
+        u32(0x06054b50), u16(0), u16(0),
+        u16(files.length), u16(files.length),
+        u32(centralDir.length), u32(offset), u16(0),
+      ]);
+      return concat([...localParts, centralDir, end]);
+    }
+    function downloadBlob(filename, bytes) {
+      const blob = new Blob([bytes], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    const status = document.getElementById("status");
+    function setStatus(text, kind) {
+      status.textContent = text;
+      status.className = kind || "";
+    }
+
+    function exportOpts(type) {
+      return {
+        type,
+        scope: document.getElementById("scope").value,
+        withImages: document.getElementById("images").checked,
+        withSvg: document.getElementById("svg").checked,
+        replace: document.getElementById("replace").checked,
+        endpoint: document.getElementById("endpoint").value.trim(),
+      };
+    }
+
+    document.getElementById("push").onclick = () => {
+      setStatus("Exporting for push…");
+      parent.postMessage({ pluginMessage: exportOpts("push") }, "*");
+    };
+    document.getElementById("export").onclick = () => {
+      setStatus("Working…");
+      parent.postMessage({ pluginMessage: exportOpts("export") }, "*");
+    };
+    document.getElementById("cancel").onclick = () => {
+      parent.postMessage({ pluginMessage: { type: "cancel" } }, "*");
+    };
+
+    async function pushToServe(msg) {
+      setStatus("Pushing to " + msg.endpoint + "…");
+      try {
+        const res = await fetch(msg.endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            documentJson: msg.documentJson,
+            assets: msg.assets || [],
+            name: msg.suggestedName,
+            replace: msg.replace === true,
+          }),
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = { raw: text }; }
+        if (!res.ok) {
+          setStatus("Push failed (" + res.status + "): " + (data.error || text), "err");
+          return;
+        }
+        setStatus(
+          "Indexed " + (data.nodeCount ?? "?") + " nodes → " + (data.indexDir || ".figmagraph/") +
+          "\nReload MCP if the agent doesn't see it yet.",
+          "ok"
+        );
+      } catch (e) {
+        setStatus(
+          "Cannot reach serve. In your project run:\n  figmagraph serve\n\n" + (e && e.message ? e.message : e),
+          "err"
+        );
+      }
+    }
+
+    onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+      if (msg.type === "progress") setStatus(msg.message);
+      if (msg.type === "error") setStatus(msg.message, "err");
+      if (msg.type === "push") pushToServe(msg);
+      if (msg.type === "download") {
+        setStatus("Building ZIP…");
+        const files = [
+          { name: "document.json", data: new TextEncoder().encode(msg.documentJson) },
+        ];
+        for (const a of msg.assets || []) {
+          files.push({ name: "assets/" + a.name, data: Uint8Array.from(a.bytes) });
+        }
+        const zip = buildZip(files);
+        downloadBlob(msg.fileName || "export.figmagraph.zip", zip);
+        setStatus("Saved ZIP. Or use Push next time with: figmagraph serve", "ok");
+      }
+    };
+  </script>
+</body>
+</html>

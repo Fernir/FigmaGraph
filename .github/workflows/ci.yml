@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install JS deps
+        run: npm ci
+      - name: Build native + JS
+        run: npm run build
+      - name: Test
+        run: npm test
+      - name: Cargo check
+        working-directory: crates/figmagraph-core
+        run: cargo test --release
