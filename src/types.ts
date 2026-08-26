@@ -103,7 +103,7 @@ export type IndexMeta = {
   fileKey?: string;
   fileName?: string;
   version?: string;
-  source: "plugin" | "rest";
+  source: "plugin" | "rest" | "mcp";
   indexedAt: string;
   nodeCount: number;
   rootNodeIds: string[];

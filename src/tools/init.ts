@@ -1,6 +1,10 @@
-import { writeFileSync, existsSync, readFileSync } from "node:fs";
+import { writeFileSync, existsSync, rmSync } from "node:fs";
 import { join, basename } from "node:path";
-import { ingestFromRest, parseFigmaUrl } from "../ingest/from-rest.js";
+import {
+  ingestFromRest,
+  parseFigmaUrl,
+  stripNodeIdFromUrl,
+} from "../ingest/from-rest.js";
 import { loadExport, materializeExport } from "../ingest/from-export.js";
 import {
   mergeDocuments,
@@ -13,18 +17,21 @@ import {
   resolveIndexDir,
   ensureIndexDirs,
   resolveProjectPath,
+  readMeta,
 } from "../paths.js";
 import {
   isFigmaUrl,
   nameFromFigmaUrl,
   resolveFigmaToken,
+  saveFigmaToken,
   slugifyName,
 } from "../config.js";
 import { wireAgents } from "../agents.js";
+import { figmaMcpFallbackMessage } from "./ingest-mcp.js";
 
 export type InitResult = {
   ok: boolean;
-  source: "rest" | "plugin";
+  source: "plugin" | "rest" | "mcp";
   projectPath: string;
   indexDir: string;
   label: string;
@@ -37,6 +44,16 @@ export type InitResult = {
   merged?: boolean;
   addedRoots?: string[];
   keptRoots?: string[];
+  /** Present on ensureIndexForUrl when local index already covers this URL/node. */
+  alreadyHadIndex?: boolean;
+  /** Agent should call official Figma MCP then figmagraph_sync to cache. */
+  fallback?: {
+    use: string[];
+    then: string;
+    url: string;
+    fileKey?: string;
+    nodeId?: string;
+  };
 };
 
 export async function initFromFigmaUrl(opts: {
@@ -45,7 +62,10 @@ export async function initFromFigmaUrl(opts: {
   name?: string;
   fetchImages?: boolean;
   token?: string;
-  /** Force full replace. Default: replace only when URL has no node-id (whole file). */
+  /**
+   * Force full replace. Default: replace when URL has no node-id (whole file).
+   * Callers that strip node-id typically pass replace: true.
+   */
   replace?: boolean;
 }): Promise<InitResult> {
   const token = opts.token ?? resolveFigmaToken();
@@ -59,8 +79,8 @@ export async function initFromFigmaUrl(opts: {
       nodeCount: 0,
       rootCount: 0,
       message:
-        "No Figma token. Run in terminal: figmagraph token <figu_…>  — or use the Desktop plugin + figmagraph serve (no token).",
-      hint: "plugin-preferred",
+        "No Figma token. Run once: figmagraph token <figu_…>  (https://www.figma.com/developers/api#access-tokens)",
+      hint: "token-required",
     };
   }
 
@@ -141,7 +161,75 @@ export async function initFromFigmaUrl(opts: {
       ? `Merged into ${indexDir}: +${added.join(", ") || "screens"}` +
         (kept.length ? ` (kept ${kept.join(", ")})` : "")
       : `Indexed ${result.meta.nodeCount} nodes into ${indexDir}. Next: figmagraph_explore.`,
-    hint: "REST uses Figma API quota. Prefer plugin push via figmagraph serve for day-to-day updates.",
+    hint: "Synced via Figma API into local .figmagraph/ — explore uses local IR (no more API until next URL sync).",
+  };
+}
+
+/**
+ * Project bootstrap — once per app: wire MCP, ensure .figmagraph/.
+ * Token optional (REST sync); without it agents use free Figma MCP → cache.
+ */
+export function initProject(opts?: {
+  projectPath?: string;
+  token?: string;
+}): InitResult & { tokenOk: boolean } {
+  const projectPath = resolveProjectPath({ projectPath: opts?.projectPath });
+  const indexDir = resolveIndexDir({ projectPath });
+  ensureIndexDirs(indexDir);
+
+  if (opts?.token?.trim()) {
+    saveFigmaToken(opts.token.trim());
+  }
+
+  try {
+    wireAgents({ projectPath });
+  } catch {
+    /* ignore */
+  }
+
+  const token = resolveFigmaToken();
+  writeFileSync(
+    join(indexDir, "project.json"),
+    JSON.stringify(
+      {
+        ready: true,
+        mode: "url",
+        initializedAt: new Date().toISOString(),
+        projectPath,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  if (!token) {
+    return {
+      ok: true,
+      tokenOk: false,
+      source: "rest",
+      projectPath,
+      indexDir,
+      label: "ready",
+      nodeCount: 0,
+      rootCount: 0,
+      message:
+        `Ready at ${indexDir}. Paste a Figma link — agent uses free Figma MCP reads and caches them locally. ` +
+        `Optional: figmagraph token <figu_…> for unlimited REST sync.`,
+      hint: "mcp-fallback-ok",
+    };
+  }
+
+  return {
+    ok: true,
+    tokenOk: true,
+    source: "rest",
+    projectPath,
+    indexDir,
+    label: "ready",
+    nodeCount: 0,
+    rootCount: 0,
+    message:
+      `Ready. Paste a Figma link in Cursor — figmagraph_explore will sync into ${indexDir} and use Layout IR locally.`,
   };
 }
 
@@ -223,16 +311,70 @@ export function initFromExportPath(opts: {
   };
 }
 
-/** If URL given and index missing/empty, init; node URLs always merge into existing. */
+/**
+ * Wipe all local design data under .figmagraph/, keep project scaffold + MCP wire.
+ */
+export function resetProjectIndex(opts?: {
+  projectPath?: string;
+}): InitResult & { wiped: boolean } {
+  const projectPath = resolveProjectPath({ projectPath: opts?.projectPath });
+  const indexDir = resolveIndexDir({ projectPath });
+  const existed = existsSync(indexDir);
+
+  if (existed) {
+    rmSync(indexDir, { recursive: true, force: true });
+  }
+
+  ensureIndexDirs(indexDir);
+  writeFileSync(
+    join(indexDir, "project.json"),
+    JSON.stringify(
+      {
+        ready: true,
+        mode: "url",
+        resetAt: new Date().toISOString(),
+        projectPath,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  try {
+    wireAgents({ projectPath });
+  } catch {
+    /* ignore */
+  }
+
+  return {
+    ok: true,
+    wiped: existed,
+    source: "rest",
+    projectPath,
+    indexDir,
+    label: "reset",
+    nodeCount: 0,
+    rootCount: 0,
+    message: existed
+      ? `Wiped ${indexDir}. Paste a Figma link to sync fresh.`
+      : `Nothing to wipe at ${indexDir} — scaffold ready.`,
+  };
+}
+
+/**
+ * Ensure local index for a Figma URL.
+ * Same fileKey already indexed → local only.
+ * Otherwise strip node-id and download the whole file (PAT), or return MCP fallback.
+ */
 export async function ensureIndexForUrl(opts: {
   url: string;
   projectPath?: string;
   force?: boolean;
   replace?: boolean;
-}): Promise<InitResult & { alreadyHadIndex?: boolean }> {
+}): Promise<InitResult> {
   const projectPath = resolveProjectPath({ projectPath: opts.projectPath });
   const indexDir = resolveIndexDir({ projectPath });
-  const metaPath = join(indexDir, "meta.json");
+  const meta = readMeta(indexDir);
 
   if (!isFigmaUrl(opts.url)) {
     return {
@@ -248,42 +390,55 @@ export async function ensureIndexForUrl(opts: {
   }
 
   const parsed = parseFigmaUrl(opts.url);
-  const hasIndex =
-    existsSync(metaPath) &&
-    (() => {
-      try {
-        const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
-          nodeCount?: number;
-        };
-        return (meta.nodeCount ?? 0) > 0;
-      } catch {
-        return false;
-      }
-    })();
+  const hasIndex = Boolean(meta && (meta.nodeCount ?? 0) > 0);
 
-  // Full-file URL + existing index + no force → skip (avoid burning quota)
-  if (hasIndex && !opts.force && !parsed.nodeId) {
-    const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
-      nodeCount?: number;
-      name?: string;
-    };
-    return {
-      ok: true,
-      source: "plugin",
-      projectPath,
+  // File already in local DB → never re-hit Figma (node-id only selects locally)
+  if (!opts.force && hasIndex && meta) {
+    const sameFile = !meta.fileKey || meta.fileKey === parsed.fileKey;
+    if (sameFile) {
+      return {
+        ok: true,
+        source: meta.source ?? "rest",
+        projectPath,
+        indexDir,
+        label: meta.name ?? "",
+        nodeCount: meta.nodeCount ?? 0,
+        rootCount: meta.rootNodeIds?.length ?? 0,
+        alreadyHadIndex: true,
+        fileKey: meta.fileKey ?? parsed.fileKey,
+        message: parsed.nodeId
+          ? `File already indexed — using local DB for node ${parsed.nodeId} (no Figma read).`
+          : `File already indexed at ${indexDir} (${meta.nodeCount} nodes) — using local DB.`,
+      };
+    }
+  }
+
+  const token = resolveFigmaToken();
+  if (!token) {
+    const fb = figmaMcpFallbackMessage({
       indexDir,
-      label: meta.name ?? "",
-      nodeCount: meta.nodeCount ?? 0,
-      rootCount: 0,
-      alreadyHadIndex: true,
-      message: `Index already exists at ${indexDir} (${meta.nodeCount} nodes). Use figmagraph_explore, or force=true / a node-id URL to update.`,
+      url: opts.url,
+      fileKey: parsed.fileKey,
+      nodeId: parsed.nodeId,
+    });
+    return {
+      ...fb,
+      projectPath,
+      fallback: {
+        use: ["get_screenshot", "get_metadata", "get_design_context"],
+        then: "figmagraph_sync",
+        url: opts.url,
+        fileKey: parsed.fileKey,
+        nodeId: parsed.nodeId,
+      },
     };
   }
 
-  // Node URL or force or empty index → fetch (merge by default for node URLs)
+  // Always strip node-id and download the whole file
+  const fullUrl = stripNodeIdFromUrl(opts.url);
   return initFromFigmaUrl({
-    url: opts.url,
+    url: fullUrl,
     projectPath: opts.projectPath,
-    replace: opts.replace,
+    replace: opts.replace ?? true,
   });
 }

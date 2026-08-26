@@ -4,6 +4,10 @@ import { userDataRoot } from "./paths.js";
 
 export type FigmagraphConfig = {
   token?: string;
+  pluginDir?: string;
+  pluginSyncedAt?: string;
+  /** User has been shown the one-time Import-from-manifest tip */
+  pluginImportHintShown?: boolean;
 };
 
 function configPath(): string {

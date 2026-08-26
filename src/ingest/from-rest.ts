@@ -58,6 +58,14 @@ export function parseFigmaUrl(url: string): {
   return { fileKey, nodeId, suggestedName };
 }
 
+/** Drop `node-id` so REST fetches the whole file. */
+export function stripNodeIdFromUrl(url: string): string {
+  const u = new URL(url);
+  u.searchParams.delete("node-id");
+  u.hash = "";
+  return u.toString();
+}
+
 async function figmaGet(
   path: string,
   token: string
@@ -87,9 +95,7 @@ export async function ingestFromRest(
   opts: RestIngestOptions
 ): Promise<{ document: FigmaDocument; assetMap: AssetMap; fileKey: string }> {
   console.warn(
-    "\n⚠️  REST ingest uses Figma Tier-1 API calls.\n" +
-      "   Starter / free seats: up to ~6 file/image reads per month.\n" +
-      "   Prefer: Figma Desktop plugin → Export ZIP → figmagraph init --from …\n"
+    "\n⚠️  REST ingest uses Figma API quota. Prefer local index after first sync.\n"
   );
 
   const { fileKey, nodeId } = parseFigmaUrl(opts.url);

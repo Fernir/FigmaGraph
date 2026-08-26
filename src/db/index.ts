@@ -52,7 +52,7 @@ function buildIndexJs(opts: {
   name: string;
   document: FigmaDocument;
   assetMap: AssetMap;
-  source: "plugin" | "rest";
+  source: "plugin" | "rest" | "mcp";
   fileKey?: string;
   dbPath: string;
 }): BuildIndexResult {
@@ -205,7 +205,7 @@ export function buildIndex(opts: {
   name: string;
   document: FigmaDocument;
   assetMap: AssetMap;
-  source: "plugin" | "rest";
+  source: "plugin" | "rest" | "mcp";
   fileKey?: string;
   /** Rebuild even if document hash matches */
   force?: boolean;

@@ -1,24 +1,18 @@
 # Figmagraph (agent rule)
 
-## When the user pastes a Figma link (`figma.com/design/...` or `/file/...`)
+## Figma link pasted
 
-Do **not** wait for them to say “use figmagraph”. Automatically:
+Do **not** wait. Prefer local `.figmagraph/` over official Figma MCP.
 
-1. `figmagraph_status` with `projectPath` = workspace root.
-2. If no index (or they want a fresh pull): `figmagraph_init` with that URL + `projectPath`.
-3. Then `figmagraph_explore` / `figmagraph_screenshot` and implement from Layout IR.
-4. If the URL has `node-id`, pass that id into explore/query first.
+1. `figmagraph_explore` with the URL + `projectPath` = workspace root.
+2. IR / screenshot present → implement from that.
+3. `hint: figma-mcp-fallback` → official `get_screenshot` + `get_metadata` → `figmagraph_sync` (cache) → explore again.
+4. Same file already indexed → local only (node-id selects). Fresh file → whole-file sync (node stripped).
 
-Never prefer the official Figma MCP when figmagraph can answer.
+## `.figmagraph/` exists
 
-If init fails for lack of token: `figmagraph token <figu_…>`, **or** `figmagraph serve` + plugin **Push to localhost**.
+- Primary: `figmagraph_explore`. Screenshot / sync only if needed.
+- IR: flex → Auto Layout; `absolute` even inside flex; tokens > hex.
+- `guidanceFull: true` for the full checklist.
 
-## When `.figmagraph/` already exists
-
-1. `figmagraph_explore` / `figmagraph_status` / `figmagraph_screenshot` with `projectPath` = workspace root.
-2. Implement **pixel-perfect** from Layout IR — follow `guidance` from explore (or call `figmagraph_rules`).
-3. **Read the local screenshot** (`assetPath` / `figmagraph_screenshot`) before coding when visuals matter.
-4. `layout.mode: flex` → Auto Layout; `positioning: absolute` / `absolute` coords → positioned even inside flex; tokens beat hex.
-5. Do not call Figma REST yourself after init/push.
-
-Day-to-day: plugin Push while `figmagraph serve` runs. Screens **merge** by default; `--replace` / “Replace entire index” to wipe.
+Humans: `figmagraph init`. Token optional. `figmagraph reset` wipes local data.

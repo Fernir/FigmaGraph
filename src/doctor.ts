@@ -64,7 +64,7 @@ export function runDoctor(opts?: { projectPath?: string }): DoctorReport {
         mcpOk = true;
         mcpDetail = `figmagraph wired in ${mcpPath}`;
       } else {
-        mcpDetail = `Cursor MCP exists but figmagraph missing — run: figmagraph serve (or wire)`;
+        mcpDetail = `Cursor MCP exists but figmagraph missing — run: figmagraph init`;
       }
     } catch {
       mcpDetail = `Unreadable ${mcpPath}`;
@@ -90,7 +90,7 @@ export function runDoctor(opts?: { projectPath?: string }): DoctorReport {
     checks.push({
       id: "index",
       ok: false,
-      detail: `No index at ${indexDir}. Run: figmagraph serve + plugin Push, or figmagraph init`,
+      detail: `No index at ${indexDir}. Paste a Figma link in chat, or: figmagraph init`,
     });
   }
 
@@ -99,8 +99,8 @@ export function runDoctor(opts?: { projectPath?: string }): DoctorReport {
     id: "token",
     ok: true, // optional — plugin path needs no token
     detail: token
-      ? `Figma token saved (${token.slice(0, 8)}…) — only needed for URL init`
-      : `No Figma token (ok if you use plugin+serve). Config: ${join(userDataRoot(), "config.json")}`,
+      ? `Figma token saved (${token.slice(0, 8)}…) — unlimited REST URL sync`
+      : `No Figma token (ok — free Figma MCP → cache, or plugin). Config: ${join(userDataRoot(), "config.json")}`,
   });
 
   const rule = join(PACKAGE_ROOT, "AGENT_RULE.md");
@@ -112,6 +112,7 @@ export function runDoctor(opts?: { projectPath?: string }): DoctorReport {
       : `AGENT_RULE.md missing from package root`,
   });
 
-  const ok = checks.filter((c) => c.id !== "token").every((c) => c.ok);
+  const critical = checks.filter((c) => c.id !== "token" && c.id !== "index");
+  const ok = critical.every((c) => c.ok);
   return { ok, checks, projectPath, indexDir };
 }

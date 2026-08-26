@@ -3,37 +3,28 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  writeFileSync,
   statSync,
 } from "node:fs";
-import { join, basename } from "node:path";
-import { loadExport, materializeExport } from "./ingest/from-export.js";
-import { ingestFromRest, parseFigmaUrl } from "./ingest/from-rest.js";
+import { join } from "node:path";
 import { buildIndex, loadDocumentFromIndex, openIndexDb } from "./db/index.js";
 import {
   resolveIndexDir,
-  ensureIndexDirs,
   PACKAGE_ROOT,
   userDataRoot,
   resolveProjectPath,
   findProjectRoot,
+  pluginManifestPath,
 } from "./paths.js";
 import { statusIndex } from "./tools/explore.js";
 import * as ui from "./ui.js";
 import {
   isFigmaUrl,
-  nameFromFigmaUrl,
   resolveFigmaToken,
   saveFigmaToken,
   slugifyName,
 } from "./config.js";
 import { wireAgents, summarizeWire } from "./agents.js";
 import { initFromExportPath } from "./tools/init.js";
-import {
-  mergeDocuments,
-  mergeAssetMaps,
-  readExistingRaw,
-} from "./ingest/merge.js";
 
 const VERSION = (() => {
   try {
@@ -53,19 +44,24 @@ function usage(exitCode = 0): never {
     VERSION,
     "Local Figma index for Cursor, Claude, Codex & more"
   );
-  ui.bannerLine(ui.bold("Commands"));
-  ui.bannerCmd("serve", "Listen for Desktop plugin pushes (recommended)");
-  ui.bannerCmd("init", "Index from plugin ZIP (--from) or Figma URL");
-  ui.bannerCmd("index", "Rebuild IR from .figmagraph/raw/");
-  ui.bannerCmd("status", "Show index stats for this project");
-  ui.bannerCmd("doctor", "Check native binary, MCP, index, token");
-  ui.bannerCmd("token", "Save Figma token (only needed for URL init)");
+  ui.bannerLine(ui.bold("Setup (once)"));
+  ui.bannerLine(`  ${ui.cyan("npm i -g figmagraph")}`);
+  ui.bannerLine(`  ${ui.cyan("cd your-app && figmagraph init")}`);
   ui.bannerLine("");
-  ui.bannerLine(ui.bold("Examples"));
-  ui.bannerLine(`  ${ui.dim("cd my-app && figmagraph serve")}`);
-  ui.bannerLine(`  ${ui.dim("# Figma plugin → Push to localhost")}`);
-  ui.bannerLine(`  ${ui.dim("figmagraph init --from ./export.figmagraph.zip")}`);
-  ui.bannerLine(`  ${ui.dim("figmagraph status")}`);
+  ui.bannerLine(ui.bold("Then"));
+  ui.bannerLine(`  ${ui.dim("Paste a Figma link in chat — agent syncs & implements")}`);
+  ui.bannerLine(`  ${ui.dim("No PAT: free Figma MCP read → cached into .figmagraph/")}`);
+  ui.bannerLine("");
+  ui.bannerLine(ui.bold("Commands"));
+  ui.bannerCmd("init", "Wire project (.figmagraph + MCP)");
+  ui.bannerCmd("reset", "Wipe local .figmagraph/ design data");
+  ui.bannerCmd("token", "Optional PAT for unlimited REST sync");
+  ui.bannerCmd("doctor", "Health check");
+  ui.bannerLine("");
+  ui.bannerLine(ui.bold("Optional"));
+  ui.bannerCmd("serve", "Background plugin Push server");
+  ui.bannerCmd("stop", "Stop serve");
+  ui.bannerCmd("status", "Index stats");
   ui.bannerEnd();
   process.exit(exitCode);
 }
@@ -144,123 +140,61 @@ function printIndexSummary(opts: {
   ui.blank();
 }
 
-function requireToken(): string {
-  const token = resolveFigmaToken();
-  if (token) return token;
-  ui.error("No Figma token found.");
-  ui.blank();
-  ui.info("Create a Personal Access Token:");
-  console.log(
-    `  ${ui.dim("https://www.figma.com/developers/api#access-tokens")}`
-  );
-  ui.blank();
-  ui.info("Then save it once:");
-  console.log(`  ${ui.cyan("figmagraph token")} ${ui.dim("<your-token>")}`);
-  ui.blank();
-  process.exit(1);
-}
-
 async function initFromUrl(
   url: string,
   flags: Record<string, string | boolean>
 ): Promise<void> {
-  const token = requireToken();
-  const parsed = parseFigmaUrl(url);
+  const { initFromFigmaUrl } = await import("./tools/init.js");
+  const { stripNodeIdFromUrl, parseFigmaUrl } = await import(
+    "./ingest/from-rest.js"
+  );
   const projectPath = resolveProjectPath({
     projectPath: flags.project ? String(flags.project) : process.cwd(),
   });
-  const indexDir = resolveIndexDir({ projectPath });
-  const dirs = ensureIndexDirs(indexDir);
+  const fullUrl = stripNodeIdFromUrl(url);
+  const parsed = parseFigmaUrl(url);
 
-  const wantImages = !flags["no-images"];
   ui.title("Figmagraph Init");
   ui.info(`Project  ${projectPath}`);
-  ui.info(`Index    ${ui.dim(indexDir)}`);
-  ui.info(`URL      ${ui.dim(url)}`);
-  ui.info(
-    `Key      ${parsed.fileKey}${parsed.nodeId ? ` · node ${parsed.nodeId}` : ""}`
-  );
-  if (wantImages) {
-    ui.warn(
-      "Fetching file + screenshots (Tier-1 API). Use --no-images to save quota."
-    );
-  } else {
+  ui.info(`URL      ${ui.dim(fullUrl)}`);
+  ui.info(`Key      ${parsed.fileKey}${parsed.nodeId ? " · (node stripped → full file)" : ""}`);
+  if (flags["no-images"]) {
     ui.info("Fetching file only (--no-images).");
+  } else {
+    ui.warn("Fetching whole file + screenshots (API). Use --no-images to save quota.");
   }
   ui.blank();
 
-  const { document: incoming, assetMap: incomingAssets, fileKey } =
-    await ingestFromRest({
-      url,
-      token,
-      rawDir: dirs.rawDir,
-      assetsDir: dirs.assetsDir,
-      fetchImages: wantImages,
-    });
-
-  const replace =
-    Boolean(flags.replace) ||
-    (flags.merge ? false : !parsed.nodeId);
-  const existing = replace ? null : readExistingRaw(indexDir);
-  const { document, mergedRootIds, keptRootIds } = mergeDocuments(
-    existing?.document,
-    incoming,
-    { replace }
-  );
-  const assetMap = mergeAssetMaps(existing?.assetMap, incomingAssets, {
-    replace,
+  const result = await initFromFigmaUrl({
+    url: fullUrl,
+    projectPath,
+    name: typeof flags.name === "string" ? flags.name : undefined,
+    fetchImages: !flags["no-images"],
+    replace: flags.merge ? false : true,
   });
 
-  const label =
-    typeof flags.name === "string"
-      ? slugifyName(flags.name)
-      : slugifyName(
-          existing?.document?.name ??
-            document.name ??
-            parsed.suggestedName ??
-            nameFromFigmaUrl(url)
-        );
-
-  ui.info(
-    replace
-      ? "Building Layout IR + SQLite (replace)…"
-      : existing
-        ? `Merging with existing index (${keptRootIds.length} kept roots)…`
-        : "Building Layout IR + SQLite…"
-  );
-  const result = buildIndex({
-    indexDir,
-    name: label,
-    document,
-    assetMap,
-    source: "rest",
-    fileKey,
-  });
-
-  if (!replace && existing) {
-    ui.info(
-      `Merge: updated ${mergedRootIds.length} root(s); kept ${keptRootIds.length}`
-    );
+  if (!result.ok) {
+    ui.error(result.message);
+    process.exit(1);
   }
 
-  // Suggest gitignoring heavy assets if needed
   const gi = join(projectPath, ".gitignore");
   if (existsSync(gi)) {
     const text = readFileSync(gi, "utf8");
     if (!text.includes(".figmagraph")) {
-      ui.info("Tip: add `.figmagraph/` to .gitignore if you don't want to commit the index");
+      ui.info("Tip: add `.figmagraph/` to .gitignore");
     }
   }
 
   ensureMcpWired(false, projectPath);
   printIndexSummary({
-    label,
+    label: result.label,
     projectPath,
-    indexDir,
-    nodeCount: result.meta.nodeCount,
-    rootCount: result.meta.rootNodeIds.length,
-    source: `rest (${fileKey})`,
-    fileName: result.meta.fileName,
+    indexDir: result.indexDir,
+    nodeCount: result.nodeCount,
+    rootCount: result.rootCount,
+    source: `rest (${result.fileKey ?? ""})`,
+    fileName: result.fileName,
   });
 }
 
@@ -324,19 +258,30 @@ async function cmdInit(
     return;
   }
 
-  ui.error("Pass a plugin export or Figma URL");
+  // Bare `figmagraph init` → project bootstrap (primary UX)
+  const { initProject } = await import("./tools/init.js");
+  const projectPath = flags.project ? String(flags.project) : process.cwd();
+  const token =
+    typeof flags.token === "string" ? flags.token : undefined;
+  const result = initProject({ projectPath, token });
+
+  ui.title("Figmagraph Init");
+  console.log(`${ui.cyan("Project:")}  ${result.projectPath}`);
+  console.log(`${ui.cyan("Index:")}    ${ui.dim(result.indexDir)}`);
   ui.blank();
-  console.log(
-    `  ${ui.cyan("figmagraph serve")}  ${ui.dim("# then Push from the Figma plugin")}`
-  );
-  console.log(
-    `  ${ui.cyan("figmagraph init")} ${ui.dim("--from ./export.figmagraph.zip")}`
-  );
-  console.log(
-    `  ${ui.cyan("figmagraph init")} ${ui.dim("<figma-url>")}  ${ui.dim("# uses API quota")}`
-  );
+  if (result.tokenOk) {
+    ui.success("Project wired. Paste a Figma link in Cursor — that's it.");
+    ui.info("Agent syncs into .figmagraph/ (PAT or free Figma MCP → local cache).");
+  } else {
+    ui.success("Project wired (.figmagraph + MCP). Paste a Figma link — that's it.");
+    ui.info(
+      "No PAT: agent uses official Figma MCP free-tier once, then caches locally."
+    );
+    ui.info(
+      `Optional unlimited REST: ${ui.cyan("figmagraph token")} ${ui.dim("<figu_…>")}`
+    );
+  }
   ui.blank();
-  process.exit(1);
 }
 
 function cmdToken(positional: string[]) {
@@ -358,7 +303,7 @@ function cmdToken(positional: string[]) {
   saveFigmaToken(token);
   ui.title("Figmagraph Token");
   ui.success(`Saved to ${join(userDataRoot(), "config.json")}`);
-  ui.info(`Now run ${ui.cyan("figmagraph init <figma-url>")}`);
+  ui.info(`In your app: ${ui.cyan("figmagraph init")}  then paste Figma links in chat`);
   ui.blank();
 }
 
@@ -376,7 +321,7 @@ function cmdIndex(flags: Record<string, string | boolean>) {
   const { document, assetMap } = loadDocumentFromIndex(indexDir);
   const meta = JSON.parse(readFileSync(join(indexDir, "meta.json"), "utf8")) as {
     name?: string;
-    source?: "plugin" | "rest";
+    source?: "plugin" | "rest" | "mcp";
   };
   const metaName = meta.name ?? slugifyName(document.name ?? "project");
   const source = meta.source ?? "plugin";
@@ -440,7 +385,7 @@ function cmdStatus(flags: Record<string, string | boolean>) {
   if (!result.ok || !result.meta) {
     ui.blank();
     ui.warn(result.message);
-    ui.info(`Run ${ui.cyan("figmagraph serve")} or ${ui.cyan("figmagraph init --from export.zip")}`);
+    ui.info(`Paste a Figma link in chat, or run ${ui.cyan("figmagraph init")}`);
     ui.blank();
     return;
   }
@@ -481,7 +426,11 @@ function cmdStatus(flags: Record<string, string | boolean>) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  if (!argv.length) usage(0);
+  // Bare `figmagraph` → project init (URL paste flow)
+  if (!argv.length) {
+    await cmdInit({}, []);
+    return;
+  }
   const cmd = argv[0]!;
   const { flags, positional } = parseArgs(argv.slice(1));
 
@@ -489,6 +438,23 @@ async function main() {
     case "init":
       await cmdInit(flags, positional);
       break;
+    case "reset": {
+      const { resetProjectIndex } = await import("./tools/init.js");
+      const projectPath = flags.project ? String(flags.project) : process.cwd();
+      const result = resetProjectIndex({ projectPath });
+      ui.title("Figmagraph Reset");
+      console.log(`${ui.cyan("Project:")}  ${result.projectPath}`);
+      console.log(`${ui.cyan("Index:")}    ${ui.dim(result.indexDir)}`);
+      ui.blank();
+      if (result.wiped) {
+        ui.success("Wiped all local design data.");
+      } else {
+        ui.info("No previous index — scaffold is ready.");
+      }
+      ui.info("Paste a Figma link to sync fresh (full file; node-id only selects locally).");
+      ui.blank();
+      break;
+    }
     case "token":
     case "login":
       cmdToken(positional);
@@ -500,25 +466,78 @@ async function main() {
     case "status":
       cmdStatus(flags);
       break;
+    case "stop": {
+      const { stopServe, DEFAULT_SERVE_PORT, isServeHealthy } = await import(
+        "./serve.js"
+      );
+      const port =
+        typeof flags.port === "string"
+          ? Number(flags.port)
+          : DEFAULT_SERVE_PORT;
+      const projectPath = flags.project ? String(flags.project) : undefined;
+      const wasUp = await isServeHealthy(
+        Number.isFinite(port) ? port : DEFAULT_SERVE_PORT
+      );
+      const ok = await stopServe({
+        port: Number.isFinite(port) ? port : DEFAULT_SERVE_PORT,
+        projectPath,
+      });
+      if (ok || !wasUp) {
+        ui.success(wasUp ? "Stopped background server" : "Server was not running");
+      } else {
+        ui.error("Could not stop server — is it running under another user/port?");
+        process.exit(1);
+      }
+      break;
+    }
+    case "plugin": {
+      const { ensureUserPlugin, revealPluginManifest, pluginImportHintShown } =
+        await import("./plugin-install.js");
+      const { manifest } = ensureUserPlugin();
+      if (flags.reveal === false || flags["no-reveal"]) {
+        console.log(manifest);
+      } else {
+        revealPluginManifest();
+        ui.success(`Plugin synced → ${manifest}`);
+        if (!pluginImportHintShown()) {
+          ui.info("Import ONCE in Figma Desktop:");
+          console.log(`  Plugins → Development → Import plugin from manifest…`);
+          console.log(`  (Finder should have highlighted the file)`);
+        } else {
+          ui.info("Daily: Plugins → Development → Figmagraph Export → Push");
+        }
+      }
+      break;
+    }
     case "doctor": {
       const { runDoctor } = await import("./doctor.js");
+      const { isServeHealthy, DEFAULT_SERVE_PORT } = await import("./serve.js");
       const projectPath = flags.project
         ? String(flags.project)
         : findProjectRoot(process.cwd()) ?? process.cwd();
       const report = runDoctor({ projectPath });
+      const serveUp = await isServeHealthy(DEFAULT_SERVE_PORT);
       if (flags.json) {
-        console.log(JSON.stringify(report, null, 2));
+        console.log(JSON.stringify({ ...report, serveRunning: serveUp }, null, 2));
         break;
       }
       ui.title("Figmagraph Doctor");
       console.log(`${ui.cyan("Project:")}  ${report.projectPath}`);
       console.log(`${ui.cyan("Index:")}    ${ui.dim(report.indexDir)}`);
+      console.log(`${ui.cyan("Plugin:")}   ${ui.dim(pluginManifestPath())}`);
+      console.log(
+        `${ui.cyan("Serve:")}    ${serveUp ? ui.green("running :9473") : ui.dim("not running")}`
+      );
       ui.blank();
       for (const c of report.checks) {
         const mark = c.ok ? ui.green("✓") : ui.red("✗");
         console.log(`${mark} ${ui.bold(c.id)}  ${c.detail}`);
       }
       ui.blank();
+      if (!report.checks.find((c) => c.id === "index")?.ok) {
+        ui.info(`Run ${ui.cyan("figmagraph")} then Push from the Figma plugin`);
+        ui.info(`Manifest: ${pluginManifestPath()}`);
+      }
       if (report.ok) ui.success("All critical checks passed");
       else ui.warn("Some checks failed — see details above");
       ui.blank();
@@ -526,15 +545,19 @@ async function main() {
       break;
     }
     case "serve": {
-      const { startServe, DEFAULT_SERVE_PORT } = await import("./serve.js");
+      const { startServeDaemon, startServeForeground, DEFAULT_SERVE_PORT } =
+        await import("./serve.js");
       const port =
         typeof flags.port === "string"
           ? Number(flags.port)
           : DEFAULT_SERVE_PORT;
-      startServe({
-        port: Number.isFinite(port) ? port : DEFAULT_SERVE_PORT,
-        projectPath: flags.project ? String(flags.project) : undefined,
-      });
+      const p = Number.isFinite(port) ? port : DEFAULT_SERVE_PORT;
+      const projectPath = flags.project ? String(flags.project) : undefined;
+      if (flags.foreground || flags.fg) {
+        startServeForeground({ port: p, projectPath });
+      } else {
+        await startServeDaemon({ port: p, projectPath });
+      }
       break;
     }
     case "mcp":

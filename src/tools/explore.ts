@@ -16,8 +16,6 @@ import {
 import { queryFromFigmaUrl } from "../url-query.js";
 
 export type ResolveOpts = {
-  /** @deprecated unused for path; kept for MCP compat */
-  name?: string;
   projectPath?: string;
   indexPath?: string;
 };
@@ -49,7 +47,7 @@ export function statusIndex(opts: ResolveOpts): {
       meta: null,
       projectPath,
       indexPath: indexDir,
-      message: `No figmagraph index at ${indexDir}. Run: figmagraph serve (plugin push) or figmagraph init --from export.zip`,
+      message: `No figmagraph index at ${indexDir}. Paste a Figma URL into figmagraph_explore (needs token), or run: figmagraph init`,
     };
   }
   return {
@@ -118,7 +116,7 @@ export function exploreIndex(
       projectPath,
       resolvedQuery: qRaw,
       nodeIdFromUrl: parsed.nodeId,
-      guidance: `${guidance}\n\nNo index at ${indexDir}. Run: figmagraph serve (plugin Push) or figmagraph init --from export.zip`,
+      guidance: `${guidance}\n\nNo index at ${indexDir}. Paste a Figma URL into explore (token via figmagraph token), or run figmagraph init.`,
       guidanceFullAvailable: true,
     };
   }

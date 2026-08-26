@@ -165,9 +165,7 @@ function result(
 
 export function copyAgentRule(projectPath?: string): void {
   mkdirSync(userDataRoot(), { recursive: true });
-  const ruleSrc = join(PACKAGE_ROOT, "AGENT_RULE.md");
-  const fallback = join(PACKAGE_ROOT, "CURSOR_RULE.md");
-  const src = existsSync(ruleSrc) ? ruleSrc : fallback;
+  const src = join(PACKAGE_ROOT, "AGENT_RULE.md");
   if (!existsSync(src)) return;
 
   copyFileSync(src, join(userDataRoot(), "AGENT_RULE.md"));

@@ -14,7 +14,6 @@
     "PUBLISH.md",
     "AGENT_RULE.md",
     "AGENT_RULE_IMPLEMENT.md",
-    "CURSOR_RULE.md",
     "LICENSE",
     "scripts/postinstall-native.js",
     "scripts/build-native.js",
@@ -30,7 +29,7 @@
     "version:sync": "node scripts/bump-after-publish.js",
     "dev": "tsx src/cli.ts",
     "mcp": "tsx src/mcp/server.ts",
-    "test": "FIGMAGRAPH_ALLOW_JS_FALLBACK=1 tsx --test src/layout-ir.test.ts src/golden-ir.test.ts",
+    "test": "FIGMAGRAPH_ALLOW_JS_FALLBACK=1 tsx --test src/layout-ir.test.ts src/golden-ir.test.ts src/ingest-mcp.test.ts src/url-strip.test.ts",
     "doctor": "tsx src/cli.ts doctor"
   },
   "engines": {
@@ -47,7 +46,7 @@
   ],
   "license": "MIT",
   "figmagraph": {
-    "nativeReleaseBase": "https://github.com/figmagraph/figmagraph/releases/download"
+    "nativeReleaseBase": "https://github.com/Fernir/figmagraph/releases/download"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

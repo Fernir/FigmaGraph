@@ -61,8 +61,3 @@ export function implementGuidanceFull(): string {
   cachedFull = section;
   return section;
 }
-
-/** @deprecated use implementGuidanceShort / Full */
-export function implementGuidance(): string {
-  return implementGuidanceFull();
-}

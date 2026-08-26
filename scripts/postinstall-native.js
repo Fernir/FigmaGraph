@@ -14,9 +14,11 @@ import {
   createWriteStream,
   readFileSync,
   unlinkSync,
+  copyFileSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import https from "node:https";
 import http from "node:http";
@@ -98,7 +100,7 @@ async function tryDownloadPrebuilt(id, dest) {
   const base =
     process.env.FIGMAGRAPH_NATIVE_BASE ||
     pkg.figmagraph?.nativeReleaseBase ||
-    "https://github.com/figmagraph/figmagraph/releases/download";
+    "https://github.com/Fernir/figmagraph/releases/download";
 
   const asset =
     process.platform === "win32"
@@ -137,9 +139,35 @@ async function tryDownloadPrebuilt(id, dest) {
   console.log(`[figmagraph] native core installed: ${dest}`);
 }
 
+function syncUserPlugin() {
+  const src = join(root, "plugin");
+  const dest = join(
+    process.env.FIGMAGRAPH_HOME || join(homedir(), ".figmagraph"),
+    "plugin"
+  );
+  if (!existsSync(join(src, "manifest.json"))) return;
+  mkdirSync(dest, { recursive: true });
+  for (const name of ["manifest.json", "code.js", "ui.html"]) {
+    const from = join(src, name);
+    if (existsSync(from)) copyFileSync(from, join(dest, name));
+  }
+  console.log(`[figmagraph] plugin synced → ${dest}`);
+  console.log(
+    `[figmagraph] Figma: import once from ${join(dest, "manifest.json")}`
+  );
+}
+
 async function main() {
   const id = platformId();
   const dest = join(root, "native", id, binName());
+
+  try {
+    syncUserPlugin();
+  } catch (e) {
+    console.warn(
+      `[figmagraph] plugin sync skipped: ${e instanceof Error ? e.message : e}`
+    );
+  }
 
   if (existsSync(dest)) {
     console.log(`[figmagraph] native core ok: ${id}`);

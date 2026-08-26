@@ -54,7 +54,7 @@ Stack is irrelevant: React / Vue / Svelte / Solid / plain HTML; CSS / SCSS / Les
 
 ## Workflow (mandatory order)
 
-1. `figmagraph_explore` the target frame / node (use node-id from the Figma URL when present).
+1. `figmagraph_explore` with the target frame / node / Figma URL (auto-syncs when needed).
 2. Open the screenshot / `assetPath` / `figmagraph_screenshot` — visual ground truth (**read the image**).
 3. Scan the repo for existing layout primitives, tokens, and components to reuse **without** changing metrics.
 4. Implement **only the scoped screen/section** (not neighboring frames in the index).

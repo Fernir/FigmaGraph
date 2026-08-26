@@ -21,6 +21,8 @@ export function userDataRoot(): string {
 }
 
 export function pluginManifestPath(): string {
+  const user = join(userDataRoot(), "plugin", "manifest.json");
+  if (existsSync(user)) return user;
   return join(PACKAGE_ROOT, "plugin", "manifest.json");
 }
 
@@ -32,7 +34,8 @@ export function findProjectRoot(startDir: string = process.cwd()): string | null
     const indexDir = join(dir, ".figmagraph");
     if (
       existsSync(join(indexDir, "meta.json")) ||
-      existsSync(join(indexDir, "figmagraph.db"))
+      existsSync(join(indexDir, "figmagraph.db")) ||
+      existsSync(join(indexDir, "project.json"))
     ) {
       return dir;
     }

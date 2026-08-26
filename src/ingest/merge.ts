@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AssetMap, FigmaDocument, FigmaNode } from "../types.js";
+import type { AssetMap, FigmaDocument } from "../types.js";
 import { collectScreenRoots } from "../ir/layout-ir.js";
 import { normalizeDocument } from "./normalize.js";
 
@@ -127,26 +127,9 @@ export function readExistingRaw(
   }
 }
 
-/** Root frame ids currently stored (for messaging). */
-export function listRootIds(doc: FigmaDocument): string[] {
-  return Object.keys(toNodesDocument(doc).nodes ?? {});
-}
-
 export function rootNames(doc: FigmaDocument): string[] {
   const nodes = toNodesDocument(doc).nodes ?? {};
   return Object.values(nodes)
     .map((e) => e.document?.name)
     .filter((n): n is string => Boolean(n));
-}
-
-/** Re-attach a lone node tree under nodes{} for consistent storage. */
-export function wrapNodeAsDocument(
-  node: FigmaNode,
-  meta?: Partial<FigmaDocument>
-): FigmaDocument {
-  return {
-    name: meta?.name ?? node.name,
-    nodes: { [node.id]: { document: node } },
-    ...meta,
-  };
 }
