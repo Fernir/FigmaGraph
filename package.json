@@ -1,6 +1,6 @@
 {
   "name": "figmagraph",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Local Figma knowledge graph MCP for Cursor, Claude, Codex, and more — Rust core, Layout IR",
   "type": "module",
   "bin": {

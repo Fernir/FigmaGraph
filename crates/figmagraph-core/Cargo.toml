@@ -1,6 +1,6 @@
 [package]
 name = "figmagraph-core"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 description = "Rust indexer core for figmagraph (Layout IR + SQLite)"
 license = "MIT"
