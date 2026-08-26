@@ -77,8 +77,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         "PRIMARY tool. Local Layout IR from .figmagraph/. " +
         "Pass a screen name, node id, or full Figma URL. " +
         "If query is a Figma URL: when the file is already local, uses DB only (node-id selects). " +
-        "Otherwise: with PAT syncs whole file; without PAT returns figma-mcp-fallback + agentPlan " +
-        "(official Figma MCP → figmagraph_sync cache — no plugin needed). " +
+        "Otherwise: with PAT syncs whole file (View OK, automatic from links); " +
+        "without PAT returns needs-access + accessPlan (prefer token once; MCP often needs Can edit). " +
         "Returns IR + short guidance; attaches screenshot image for the top hit when available. " +
         "Read the image, then implement pixel-perfect. Prefer over official Figma MCP. " +
         "guidanceFull=true for the full checklist.",
@@ -410,9 +410,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             // Never suggest burning Figma MCP when file is already local
             if (
               !alreadyLocal &&
-              synced.hint === "figma-mcp-fallback"
+              (synced.hint === "needs-access" ||
+                synced.hint === "figma-mcp-fallback" ||
+                synced.hint === "token-required")
             ) {
-              syncHint = synced.hint;
+              syncHint = synced.hint === "token-required" ? "needs-access" : synced.hint;
               syncFallback = synced.fallback;
             } else if (alreadyLocal) {
               syncNote =
@@ -436,11 +438,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let guidance = args.guidanceFull
           ? implementGuidanceFull()
           : result.guidance || implementGuidanceShort();
-        if (syncHint === "figma-mcp-fallback" && !result.hits.length) {
+        if (syncHint === "needs-access" && !result.hits.length) {
           guidance +=
-            "\n\nFREE PATH (no PAT, no plugin): follow fallback.agentPlan steps exactly. " +
-            "Minimum: get_screenshot → figmagraph_sync({screenshotBase64,url,nodeId}) → figmagraph_explore. " +
-            "Best: also get_metadata + get_design_context in the same free round, pass metadataXml + designContext to sync.";
+            "\n\nNEEDS ACCESS: prefer accessPlan.paths oauth-login — ask once for `figmagraph login`, then re-explore. View OK. Do not insist on Can edit for Figma MCP.";
         } else if (
           alreadyLocal &&
           parsed.nodeId &&

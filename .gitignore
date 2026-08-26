@@ -8,6 +8,7 @@ indexes/
 *.db
 .DS_Store
 .env
+secrets/oauth.json
 *.figmagraph.zip
 .codegraph
 .cursor/

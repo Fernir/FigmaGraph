@@ -22,10 +22,13 @@ import {
 import {
   isFigmaUrl,
   nameFromFigmaUrl,
+  readConfig,
   resolveFigmaToken,
   saveFigmaToken,
   slugifyName,
 } from "../config.js";
+import { resolveFigmaAuth } from "../figma-api.js";
+import { defaultOAuthClientSecret } from "../oauth.js";
 import { wireAgents } from "../agents.js";
 import { figmaMcpFallbackMessage } from "./ingest-mcp.js";
 
@@ -46,13 +49,14 @@ export type InitResult = {
   keptRoots?: string[];
   /** Present on ensureIndexForUrl when local index already covers this URL/node. */
   alreadyHadIndex?: boolean;
-  /** Agent should call official Figma MCP then figmagraph_sync to cache. */
+  /** Agent should obtain access — prefer one-time PAT (View OK). */
   fallback?: {
     use: string[];
     then: string;
     url: string;
     fileKey?: string;
     nodeId?: string;
+    accessPlan?: import("../free-path.js").AccessPlan;
     agentPlan?: import("../free-path.js").FreePathPlan;
   };
 };
@@ -69,8 +73,10 @@ export async function initFromFigmaUrl(opts: {
    */
   replace?: boolean;
 }): Promise<InitResult> {
-  const token = opts.token ?? resolveFigmaToken();
-  if (!token) {
+  const auth = opts.token
+    ? ({ kind: "pat" as const, token: opts.token })
+    : await resolveFigmaAuth();
+  if (!auth) {
     return {
       ok: false,
       source: "rest",
@@ -80,8 +86,8 @@ export async function initFromFigmaUrl(opts: {
       nodeCount: 0,
       rootCount: 0,
       message:
-        "No Figma token. Run once: figmagraph token <figu_…>  (https://www.figma.com/developers/api#access-tokens)",
-      hint: "token-required",
+        "No Figma auth. Run once: figmagraph login  (or figmagraph token <figu_…>)",
+      hint: "needs-access",
     };
   }
 
@@ -95,7 +101,7 @@ export async function initFromFigmaUrl(opts: {
   const { document: incoming, assetMap: incomingAssets, fileKey } =
     await ingestFromRest({
       url: opts.url,
-      token,
+      auth,
       rawDir: dirs.rawDir,
       assetsDir: dirs.assetsDir,
       fetchImages: opts.fetchImages !== false,
@@ -189,6 +195,13 @@ export function initProject(opts?: {
   }
 
   const token = resolveFigmaToken();
+  const cfg = readConfig();
+  const hasAuth =
+    Boolean(token) ||
+    Boolean(cfg.oauth?.refreshToken) ||
+    Boolean(defaultOAuthClientSecret()) ||
+    Boolean(process.env.FIGMA_OAUTH_CLIENT_SECRET);
+
   writeFileSync(
     join(indexDir, "project.json"),
     JSON.stringify(
@@ -203,7 +216,7 @@ export function initProject(opts?: {
     ) + "\n"
   );
 
-  if (!token) {
+  if (!hasAuth) {
     return {
       ok: true,
       tokenOk: false,
@@ -214,8 +227,8 @@ export function initProject(opts?: {
       nodeCount: 0,
       rootCount: 0,
       message:
-        `Ready at ${indexDir}. Paste a Figma link with node-id — free path: Figma MCP → cache → local explore (no PAT/plugin).`,
-      hint: "mcp-fallback-ok",
+        `Ready at ${indexDir}. Run once: ${"figmagraph login"} — then paste Figma links (View OK). Or plugin Push.`,
+      hint: "needs-access-ok",
     };
   }
 
@@ -413,8 +426,8 @@ export async function ensureIndexForUrl(opts: {
     }
   }
 
-  const token = resolveFigmaToken();
-  if (!token) {
+  const auth = await resolveFigmaAuth();
+  if (!auth) {
     const fb = figmaMcpFallbackMessage({
       indexDir,
       url: opts.url,
@@ -426,11 +439,12 @@ export async function ensureIndexForUrl(opts: {
       ...fb,
       projectPath,
       fallback: {
-        use: fb.agentPlan.recommended,
-        then: "figmagraph_sync",
+        use: ["figmagraph login", "figmagraph token", "plugin Push"],
+        then: "figmagraph_explore",
         url: opts.url,
         fileKey: parsed.fileKey,
         nodeId: parsed.nodeId,
+        accessPlan: fb.accessPlan,
         agentPlan: fb.agentPlan,
       },
     };

@@ -2,8 +2,20 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { userDataRoot } from "./paths.js";
 
+export type OAuthTokens = {
+  accessToken: string;
+  refreshToken: string;
+  /** Epoch ms when access token expires */
+  expiresAt: number;
+  userId?: string;
+};
+
 export type FigmaGraphConfig = {
+  /** Personal access token (figu_…) */
   token?: string;
+  oauth?: OAuthTokens;
+  oauthClientId?: string;
+  oauthClientSecret?: string;
   pluginDir?: string;
   pluginSyncedAt?: string;
   /** User has been shown the one-time Import-from-manifest tip */
@@ -31,10 +43,19 @@ export function writeConfig(patch: FigmaGraphConfig): FigmaGraphConfig {
   return next;
 }
 
-/** Resolve Figma PAT: env → ~/.figmagraph/config.json → ~/.figmagraph/token */
+export function isPatToken(token: string): boolean {
+  return token.startsWith("figu_");
+}
+
+/** @deprecated Use resolveFigmaTokenSync from figma-api.js or resolveFigmaAccessToken for refresh. */
 export function resolveFigmaToken(): string | null {
-  if (process.env.FIGMA_TOKEN?.trim()) return process.env.FIGMA_TOKEN.trim();
   const cfg = readConfig();
+  if (process.env.FIGMA_TOKEN?.trim()) return process.env.FIGMA_TOKEN.trim();
+  if (cfg.oauth?.accessToken) {
+    if (Date.now() + 60_000 < cfg.oauth.expiresAt) {
+      return cfg.oauth.accessToken;
+    }
+  }
   if (cfg.token?.trim()) return cfg.token.trim();
   const legacy = join(userDataRoot(), "token");
   if (existsSync(legacy)) {
@@ -46,6 +67,25 @@ export function resolveFigmaToken(): string | null {
 
 export function saveFigmaToken(token: string): void {
   writeConfig({ token: token.trim() });
+}
+
+export function clearOAuthSession(): void {
+  const cfg = readConfig();
+  const { oauth: _o, ...rest } = cfg;
+  writeFileSync(configPath(), JSON.stringify(rest, null, 2) + "\n");
+}
+
+export function authStatusLabel(): string {
+  const cfg = readConfig();
+  if (process.env.FIGMA_TOKEN?.trim()) return "env PAT";
+  if (cfg.oauth?.accessToken) {
+    const fresh = Date.now() + 60_000 < cfg.oauth.expiresAt;
+    return fresh
+      ? `OAuth login (${cfg.oauth.userId ?? "user"})`
+      : "OAuth expired — run figmagraph login";
+  }
+  if (cfg.token?.trim()) return "manual PAT";
+  return "none";
 }
 
 export function slugifyName(input: string): string {
@@ -75,7 +115,6 @@ export function isFigmaUrl(s: string): boolean {
 export function nameFromFigmaUrl(url: string): string {
   const u = new URL(url);
   const parts = u.pathname.split("/").filter(Boolean);
-  // design/:key/:name | design/:key/branch/:branchKey/:name
   let slug: string | undefined;
   if (parts[2] === "branch") slug = parts[4];
   else if (parts[0] === "make") slug = parts[2];

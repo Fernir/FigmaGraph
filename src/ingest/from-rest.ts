@@ -2,10 +2,11 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { AssetMap, FigmaDocument } from "../types.js";
 import { normalizeDocument } from "./normalize.js";
+import { figmaGet, resolveFigmaAuth, type FigmaAuth } from "../figma-api.js";
 
 export type RestIngestOptions = {
   url: string;
-  token: string;
+  auth: FigmaAuth;
   rawDir: string;
   assetsDir: string;
   /** Download rendered images for top-level frames (costs extra Tier-1 calls). */
@@ -66,27 +67,6 @@ export function stripNodeIdFromUrl(url: string): string {
   return u.toString();
 }
 
-async function figmaGet(
-  path: string,
-  token: string
-): Promise<{ json: unknown; headers: Headers }> {
-  const res = await fetch(`https://api.figma.com/v1${path}`, {
-    headers: { "X-Figma-Token": token },
-  });
-  if (res.status === 429) {
-    const retry = res.headers.get("Retry-After");
-    throw new Error(
-      `Figma API rate limited (429). Starter plans allow ~6 Tier-1 reads/month. ` +
-        `Retry-After: ${retry ?? "unknown"}. Prefer Desktop plugin export instead.`
-    );
-  }
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Figma API ${res.status}: ${body.slice(0, 500)}`);
-  }
-  return { json: await res.json(), headers: res.headers };
-}
-
 /**
  * REST fallback ingest. WARNING: each GET file / GET images is a Tier-1 call.
  * On Starter this burns the monthly quota (~6). Prefer plugin export.
@@ -107,7 +87,7 @@ export async function ingestFromRest(
     path = `/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`;
   }
 
-  const { json } = await figmaGet(path, opts.token);
+  const { json } = await figmaGet(path, opts.auth);
   const document = normalizeDocument(json);
   document.figmagraphExport = {
     ...(document.figmagraphExport ?? {}),
@@ -146,7 +126,7 @@ export async function ingestFromRest(
       console.warn(
         `Fetching ${ids.length} image(s) — this is another Tier-1 API call…`
       );
-      const { json: imgJson } = await figmaGet(imgPath, opts.token);
+      const { json: imgJson } = await figmaGet(imgPath, opts.auth);
       const images = (imgJson as { images?: Record<string, string | null> })
         .images;
       if (images) {

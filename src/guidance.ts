@@ -10,7 +10,7 @@ export const GUIDANCE_SHORT = [
   "Pixel-perfect from Layout IR (flex=Auto Layout). Honor absolute pins inside flex.",
   "tokens.* / fill.token > hex. Read screenshot / preferScreenshot / codeHint before coding.",
   "After implement: save UI PNG → figmagraph_compare(nodeId, candidatePath). Paths-only default; includeDiff once if failed. Max 2–3 compares.",
-  "No PAT: follow explore fallback.agentPlan. guidanceFull=true for full checklist.",
+  "No index: run figmagraph login once (View OK) or plugin Push. Figma MCP often needs Can edit.",
 ].join(" ");
 
 const FALLBACK_FULL = GUIDANCE_SHORT;

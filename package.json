@@ -22,8 +22,8 @@
     "crates/figmagraph-core/src"
   ],
   "scripts": {
-    "build": "tsc && node scripts/chmod-cli.js && node scripts/build-native.js",
-    "build:js": "tsc && node scripts/chmod-cli.js",
+    "build": "tsc && node scripts/chmod-cli.js && node scripts/embed-oauth-config.js && node scripts/build-native.js",
+    "build:js": "tsc && node scripts/chmod-cli.js && node scripts/embed-oauth-config.js",
     "build:native": "node scripts/build-native.js",
     "postinstall": "node scripts/postinstall-native.js",
     "prepublishOnly": "npm run build && npm test && node scripts/check-pack-size.js",
@@ -32,7 +32,7 @@
     "version:sync": "node scripts/bump-after-publish.js",
     "dev": "tsx src/cli.ts",
     "mcp": "tsx src/mcp/server.ts",
-    "test": "FIGMAGRAPH_ALLOW_JS_FALLBACK=1 tsx --test src/layout-ir.test.ts src/golden-ir.test.ts src/ingest-mcp.test.ts src/url-strip.test.ts src/free-path.test.ts src/compare.test.ts",
+    "test": "FIGMAGRAPH_ALLOW_JS_FALLBACK=1 tsx --test src/layout-ir.test.ts src/golden-ir.test.ts src/ingest-mcp.test.ts src/url-strip.test.ts src/free-path.test.ts src/compare.test.ts src/oauth.test.ts",
     "doctor": "tsx src/cli.ts doctor"
   },
   "engines": {
@@ -49,6 +49,7 @@
   ],
   "license": "MIT",
   "figmagraph": {
+    "oauthClientId": "yJAXnW16F37vonXTKkLFZf",
     "nativeReleaseBase": "https://github.com/Fernir/FigmaGraph/releases/download"
   },
   "dependencies": {

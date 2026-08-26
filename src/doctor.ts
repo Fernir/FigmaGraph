@@ -13,7 +13,7 @@ import {
   cursorMcpConfigPath,
   readMeta,
 } from "./paths.js";
-import { resolveFigmaToken } from "./config.js";
+import { authStatusLabel } from "./config.js";
 import { nativePlatformId, rustCoreBinary, nativeBinaryName } from "./native.js";
 
 export type DoctorCheck = {
@@ -94,13 +94,14 @@ export function runDoctor(opts?: { projectPath?: string }): DoctorReport {
     });
   }
 
-  const token = resolveFigmaToken();
+  const auth = authStatusLabel();
   checks.push({
     id: "token",
-    ok: true, // optional — plugin path needs no token
-    detail: token
-      ? `Figma token saved (${token.slice(0, 8)}…) — unlimited REST URL sync`
-      : `No Figma token (ok — free Figma MCP → cache, or plugin). Config: ${join(userDataRoot(), "config.json")}`,
+    ok: auth !== "none",
+    detail:
+      auth !== "none"
+        ? `Figma auth: ${auth} — URL sync automatic (View OK)`
+        : `No Figma auth — run: figmagraph login  (config: ${join(userDataRoot(), "config.json")})`,
   });
 
   const rule = join(PACKAGE_ROOT, "AGENT_RULE.md");

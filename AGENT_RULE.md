@@ -2,11 +2,15 @@
 
 ## Figma link pasted
 
-Do **not** wait. Do **not** ask for a Figma PAT or Desktop plugin first.
+Do **not** wait.
 
-1. `figmagraph_explore` once (URL + `projectPath`). Use IR + the one attached screenshot.
-2. `hint: figma-mcp-fallback` → follow `fallback.agentPlan` (free path).
-3. File already indexed → local only — no more Figma MCP.
+1. `figmagraph_explore` once (URL + `projectPath`).
+2. Indexed → implement from IR + local screenshot. Stay local.
+3. `hint: needs-access` → follow `fallback.accessPlan` (**prefer `oauth-login`**):
+   - Ask once: `figmagraph login` (browser OAuth, **View OK**) → re-explore same URL.
+   - Or `figmagraph token <figu_…>` / Desktop plugin Push.
+   - Official Figma MCP only if Can edit; on *edit access* error **stop** — switch to login.
+4. Legacy `hint: figma-mcp-fallback` / `agentPlan` = MCP-only subpath (unreliable on View).
 
 ## After implement (visual QA — token-cheap)
 
@@ -22,4 +26,4 @@ Do **not** wait. Do **not** ask for a Figma PAT or Desktop plugin first.
 - explore → implement → compare (paths). IR: flex / absolute / tokens.
 - `guidanceFull` only if needed.
 
-Humans: `figmagraph init` → paste link. `figmagraph doctor` to verify.
+Humans: `figmagraph init` → `figmagraph login` once → paste links. `figmagraph doctor` to verify.

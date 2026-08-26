@@ -21,8 +21,10 @@ import {
   isFigmaUrl,
   resolveFigmaToken,
   saveFigmaToken,
+  authStatusLabel,
   slugifyName,
 } from "./config.js";
+import { runOAuthLogin } from "./oauth.js";
 import { wireAgents, summarizeWire } from "./agents.js";
 import { initFromExportPath } from "./tools/init.js";
 
@@ -50,12 +52,13 @@ function usage(exitCode = 0): never {
   ui.bannerLine("");
   ui.bannerLine(ui.bold("Then"));
   ui.bannerLine(`  ${ui.dim("Paste a Figma link in chat — agent syncs & implements")}`);
-  ui.bannerLine(`  ${ui.dim("No PAT: free Figma MCP read → cached into .figmagraph/")}`);
+  ui.bannerLine(`  ${ui.dim("Recommended: figmagraph login → links auto-sync (View OK)")}`);
   ui.bannerLine("");
   ui.bannerLine(ui.bold("Commands"));
   ui.bannerCmd("init", "Wire project (.figmagraph + MCP)");
   ui.bannerCmd("reset", "Wipe local .figmagraph/ design data");
-  ui.bannerCmd("token", "Optional PAT for unlimited REST sync");
+  ui.bannerCmd("login", "Browser OAuth (recommended, View OK)");
+  ui.bannerCmd("token", "Manual PAT (figu_…)");
   ui.bannerCmd("doctor", "Health check");
   ui.bannerLine("");
   ui.bannerLine(ui.bold("Optional"));
@@ -269,11 +272,11 @@ async function cmdInit(
   console.log(`${ui.cyan("Project:")}  ${result.projectPath}`);
   console.log(`${ui.cyan("Index:")}    ${ui.dim(result.indexDir)}`);
   ui.blank();
-  ui.success("Ready. Paste a Figma link with node-id in Cursor.");
-  ui.info("No PAT / no plugin: agent follows free MCP → cache → local explore.");
+  ui.success("Ready. Paste a Figma link in Cursor.");
+  ui.info("Recommended: figmagraph login (browser OAuth, View OK).");
   ui.info(`Check: ${ui.cyan("figmagraph doctor")}`);
   if (result.tokenOk) {
-    ui.info("PAT on file — URL sync can pull the whole file via REST.");
+    ui.info("PAT on file — URL sync pulls via REST automatically.");
   }
   ui.blank();
 }
@@ -284,20 +287,52 @@ function cmdToken(positional: string[]) {
     const existing = resolveFigmaToken();
     ui.title("FigmaGraph Token");
     if (existing) {
-      ui.success(`Token on file (${existing.slice(0, 8)}…)`);
-      ui.info(`Override: ${ui.cyan("figmagraph token")} <new-token>`);
+      ui.success(`Credentials on file (${authStatusLabel()})`);
+      ui.info(`Override PAT: ${ui.cyan("figmagraph token")} <figu_…>`);
     } else {
-      ui.warn("No token saved");
-      ui.info(`Save one: ${ui.cyan("figmagraph token")} <figu_…>`);
-      ui.info("Create at https://www.figma.com/developers/api#access-tokens");
+      ui.warn("No credentials saved");
+      ui.info(`Preferred: ${ui.cyan("figmagraph login")}  (browser OAuth)`);
+      ui.info(`Or manual PAT: ${ui.cyan("figmagraph token")} <figu_…>`);
     }
     ui.blank();
     return;
   }
   saveFigmaToken(token);
   ui.title("FigmaGraph Token");
-  ui.success(`Saved to ${join(userDataRoot(), "config.json")}`);
+  ui.success(`Saved PAT to ${join(userDataRoot(), "config.json")}`);
   ui.info(`In your app: ${ui.cyan("figmagraph init")}  then paste Figma links in chat`);
+  ui.blank();
+}
+
+async function cmdLogin(
+  flags: Record<string, string | boolean>,
+  positional: string[]
+) {
+  ui.title("FigmaGraph Login");
+  const clientSecret =
+    typeof flags["client-secret"] === "string"
+      ? flags["client-secret"]
+      : positional[0];
+  const saveSecret = Boolean(flags["save-secret"]);
+  ui.info("Opening browser for Figma authorization…");
+  ui.info(`Callback: http://127.0.0.1:9474/oauth/callback`);
+  ui.blank();
+  try {
+    const result = await runOAuthLogin({
+      clientSecret,
+      saveClientSecret: saveSecret,
+    });
+    if (result.ok) {
+      ui.success(result.message);
+      ui.info("Return to Cursor and paste your Figma link.");
+    } else {
+      ui.error(result.message);
+      process.exit(1);
+    }
+  } catch (e) {
+    ui.error(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  }
   ui.blank();
 }
 
@@ -449,8 +484,10 @@ async function main() {
       ui.blank();
       break;
     }
-    case "token":
     case "login":
+      await cmdLogin(flags, positional);
+      break;
+    case "token":
       cmdToken(positional);
       break;
     case "index":

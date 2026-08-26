@@ -21,7 +21,7 @@ import {
 } from "../ingest/merge.js";
 import { isFigmaUrl, slugifyName } from "../config.js";
 import { wireAgents } from "../agents.js";
-import { buildFreePathPlan, type FreePathPlan } from "../free-path.js";
+import { buildAccessPlan, type AccessPlan, type FreePathPlan } from "../free-path.js";
 
 export type McpCacheResult = {
   ok: boolean;
@@ -416,13 +416,18 @@ export function figmaMcpFallbackMessage(opts: {
   fileKey?: string;
   nodeId?: string;
   projectPath?: string;
-}): McpCacheResult & { agentPlan: FreePathPlan } {
-  const agentPlan = buildFreePathPlan({
+}): McpCacheResult & {
+  accessPlan: AccessPlan;
+  /** @deprecated Use accessPlan — MCP-only steps (often needs Can edit). */
+  agentPlan: FreePathPlan;
+} {
+  const accessPlan = buildAccessPlan({
     url: opts.url,
     fileKey: opts.fileKey,
     nodeId: opts.nodeId,
     projectPath: opts.projectPath,
   });
+  const agentPlan = accessPlan.figmaMcp!;
   return {
     ok: false,
     source: "mcp",
@@ -433,9 +438,9 @@ export function figmaMcpFallbackMessage(opts: {
     rootCount: 0,
     fileKey: opts.fileKey,
     message:
-      `No PAT / no plugin needed. Follow agentPlan (official Figma MCP → figmagraph_sync → explore). ` +
-      `Minimum: get_screenshot → sync → explore. Best: + get_metadata + get_design_context in the same free round.`,
-    hint: "figma-mcp-fallback",
+      `No Figma auth yet. Preferred: figmagraph login (browser, View OK). Or manual PAT / plugin Push. Official Figma MCP often needs Can edit — see accessPlan.`,
+    hint: "needs-access",
+    accessPlan,
     agentPlan,
   };
 }
