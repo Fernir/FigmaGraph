@@ -10,3 +10,5 @@ indexes/
 .env
 *.figmagraph.zip
 .codegraph
+.cursor/
+.native-stage/
